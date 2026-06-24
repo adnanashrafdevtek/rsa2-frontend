@@ -1,0 +1,9 @@
+body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; }
+.container { max-width: 900px; margin: 32px auto; padding: 0 16px; }
+.toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px }
+.btn { padding:6px 10px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer }
+.btn.primary{ background:#0ea5a4; color:white; border-color:transparent }
+.card{ border:1px solid #e6e6e6; border-radius:8px; padding:12px; background:white }
+table { width:100%; border-collapse:collapse }
+th,td{ padding:8px; border-bottom:1px solid #f0f0f0; text-align:left }
+.muted{ color:#666 }
