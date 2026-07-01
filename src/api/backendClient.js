@@ -10,7 +10,13 @@ function buildQuery(params = {}) {
 }
 
 async function request(path, opts = {}) {
-  const res = await fetch(BASE + path, opts);
+  const headers = { ...(opts.headers || {}) };
+  if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+
+  const role = typeof window !== 'undefined' ? window.localStorage.getItem('planner-role') : null;
+  if (role && !headers['x-user-role']) headers['x-user-role'] = role;
+
+  const res = await fetch(BASE + path, { ...opts, headers });
   if (!res.ok) {
     const text = await res.text();
     throw new Error(text || res.statusText);
@@ -28,5 +34,11 @@ export default {
     const url = `/${resource}/${encodeURIComponent(id)}`;
     const json = await request(url);
     return (json && json.mysqlResult) || json;
+  },
+  create: async (resource, body = {}) => {
+    return request(`/${resource}`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
   }
 }
