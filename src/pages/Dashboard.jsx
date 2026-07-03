@@ -21,6 +21,7 @@ const RESOURCES = [
     { key: 'name', label: 'Name' },
     { key: 'teacher_id', label: 'Teacher ID' },
     { key: 'room_id', label: 'Room ID' },
+    { key: 'grade_level', label: 'Grade Level' },
   ]},
   { id: 'rooms', label: 'Rooms', icon: MapPin, fields: [
     { key: 'id', label: 'ID' },
@@ -259,16 +260,16 @@ function ResourcePanel({ resource, resourceMeta }) {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
               <h3 className="font-semibold text-slate-900">Admin management</h3>
               <p className="text-sm text-slate-500">Use admin mode to create classes, assign students, and add rooms for specific periods.</p>
             </div>
-            <div className="flex items-center gap-2">
-              <button type="button" onClick={() => setAdminMode('Admin')} className={`rounded-lg px-3 py-2 text-sm font-medium ${isAdmin ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+            <div className="flex flex-nowrap items-center gap-2">
+              <button type="button" onClick={() => setAdminMode('Admin')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${isAdmin ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                 Admin mode
               </button>
-              <button type="button" onClick={() => setAdminMode('Student')} className={`rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              <button type="button" onClick={() => setAdminMode('Student')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                 Student mode
               </button>
             </div>
@@ -286,11 +287,11 @@ function ResourcePanel({ resource, resourceMeta }) {
             </div>
           ) : (
             <div className="mt-4 space-y-4">
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => setAdminAction('classes')} className={`rounded-lg px-3 py-2 text-sm font-medium ${adminAction === 'classes' ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+              <div className="flex flex-nowrap items-center gap-2">
+                <button type="button" onClick={() => setAdminAction('classes')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'classes' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                   Create Classes
                 </button>
-                <button type="button" onClick={() => setAdminAction('rooms')} className={`rounded-lg px-3 py-2 text-sm font-medium ${adminAction === 'rooms' ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                <button type="button" onClick={() => setAdminAction('rooms')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'rooms' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                   Create Rooms
                 </button>
               </div>
@@ -298,27 +299,42 @@ function ResourcePanel({ resource, resourceMeta }) {
               {adminAction === 'classes' && (
                 <form onSubmit={handleCreateClass} className="rounded-xl border border-slate-200 p-4">
                   <h4 className="font-semibold text-slate-900">Create class</h4>
-                  <p className="mt-1 text-sm text-slate-500">Create a class and assign students to it in one step.</p>
-                  <div className="mt-4 space-y-3">
-                    <input value={classForm.name} onChange={(event) => setClassForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Class name" required />
-                    <select value={classForm.teacher_id} onChange={(event) => setClassForm((prev) => ({ ...prev, teacher_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                      <option value="">Select teacher</option>
-                      {teacherOptions.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>{`${teacher.first_name} ${teacher.last_name}`}</option>
-                      ))}
-                    </select>
-                    <select value={classForm.room_id} onChange={(event) => setClassForm((prev) => ({ ...prev, room_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                      <option value="">Select room</option>
-                      {roomOptions.map((room) => (
-                        <option key={room.id} value={room.id}>{room.name}</option>
-                      ))}
-                    </select>
-                    <select multiple value={selectedStudentIds} onChange={handleStudentSelection} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" size="4">
-                      {studentOptions.map((student) => (
-                        <option key={student.id} value={student.id}>{`${student.first_name} ${student.last_name}`}</option>
-                      ))}
-                    </select>
-                    <input value={classForm.grade_level} onChange={(event) => setClassForm((prev) => ({ ...prev, grade_level: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Grade level" />
+                  <p className="mt-1 text-sm text-slate-500">Create a class, assign a teacher and room, and set the grade level in one step.</p>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="space-y-1 text-sm text-slate-600">
+                      <span className="font-medium">Class name</span>
+                      <input value={classForm.name} onChange={(event) => setClassForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Enter class name" required />
+                    </label>
+                    <label className="space-y-1 text-sm text-slate-600">
+                      <span className="font-medium">Teacher</span>
+                      <select value={classForm.teacher_id} onChange={(event) => setClassForm((prev) => ({ ...prev, teacher_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
+                        <option value="">Select teacher</option>
+                        {teacherOptions.map((teacher) => (
+                          <option key={teacher.id} value={teacher.id}>{`${teacher.first_name} ${teacher.last_name}`}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-sm text-slate-600">
+                      <span className="font-medium">Room</span>
+                      <select value={classForm.room_id} onChange={(event) => setClassForm((prev) => ({ ...prev, room_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
+                        <option value="">Select room</option>
+                        {roomOptions.map((room) => (
+                          <option key={room.id} value={room.id}>{room.name}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="space-y-1 text-sm text-slate-600">
+                      <span className="font-medium">Grade level</span>
+                      <input value={classForm.grade_level} onChange={(event) => setClassForm((prev) => ({ ...prev, grade_level: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. 10" />
+                    </label>
+                    <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
+                      <span className="font-medium">Assign students</span>
+                      <select multiple value={selectedStudentIds} onChange={handleStudentSelection} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" size="4">
+                        {studentOptions.map((student) => (
+                          <option key={student.id} value={student.id}>{`${student.first_name} ${student.last_name}`}</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                   <button type="submit" className="mt-4 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Create class</button>
                 </form>
@@ -459,7 +475,7 @@ export default function Dashboard() {
         </div>
 
         <Tabs value={activeResource} onValueChange={setActiveResource} className="space-y-6">
-          <TabsList className="flex-wrap justify-start">
+          <TabsList className="justify-start">
             {RESOURCES.map((resource) => {
               const Icon = resource.icon
               return (
