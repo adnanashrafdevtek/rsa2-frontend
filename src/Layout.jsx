@@ -1,15 +1,16 @@
 import React, { useState } from 'react'
-import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, GraduationCap } from "lucide-react"
+import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, GraduationCap, Upload } from "lucide-react"
 
 export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
 
   const nav = [
-    { label: "Dashboard", icon: LayoutDashboard, id: "dashboard" },
-    { label: "Schedules", icon: CalendarDays, id: "schedules" },
-    { label: "Announcements", icon: Bell, id: "announcements" },
-    { label: "Calendar", icon: BookOpen, id: "calendar" },
-    { label: "Profile", icon: User, id: "profile" },
+    { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/" },
+    { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
+    { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/" },
+    { label: "Announcements", icon: Bell, id: "announcements", href: "/" },
+    { label: "Calendar", icon: BookOpen, id: "calendar", href: "/" },
+    { label: "Profile", icon: User, id: "profile", href: "/" },
   ]
 
   return (
@@ -36,7 +37,7 @@ export default function Layout({ children }) {
             return (
               <a
                 key={item.id}
-                href={`#${item.id}`}
+                href={item.href}
                 className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-600 hover:bg-slate-50 hover:text-slate-800"
               >
                 <Icon className="w-4.5 h-4.5 text-slate-400" />
@@ -70,7 +71,7 @@ export default function Layout({ children }) {
               return (
                 <a
                   key={item.id}
-                  href={`#${item.id}`}
+                  href={item.href}
                   className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-600 hover:bg-slate-50"
                   onClick={() => setMobileOpen(false)}
                 >

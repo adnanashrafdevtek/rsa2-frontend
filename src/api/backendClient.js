@@ -28,5 +28,12 @@ export default {
     const url = `/${resource}/${encodeURIComponent(id)}`;
     const json = await request(url);
     return (json && json.mysqlResult) || json;
+  },
+  uploadExcelFile: async (fileBuffer, fileName) => {
+    return request('/user/import-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBuffer, fileName })
+    })
   }
 }
