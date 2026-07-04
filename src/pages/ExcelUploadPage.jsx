@@ -27,7 +27,12 @@ export default function ExcelUploadPage() {
         setError(result.errors.map((item) => `Row ${item.index}: ${item.message}`).join(' | '))
       }
     } catch (err) {
-      setError(err.message || 'Upload failed')
+      const message = err?.message || 'Upload failed'
+      if (message.toLowerCase().includes('failed to fetch')) {
+        setError('Upload failed: backend appears unreachable. Ensure the backend is running and reachable at http://localhost:3000')
+      } else {
+        setError(message)
+      }
     } finally {
       setLoading(false)
     }

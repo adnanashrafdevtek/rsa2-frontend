@@ -19,7 +19,8 @@ async function request(path, opts = {}) {
   const res = await fetch(BASE + path, { ...opts, headers });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    const body = text ? `: ${text}` : '';
+    throw new Error(`Request failed ${res.status} ${res.statusText}${body}`);
   }
   try { return await res.json(); } catch { return null; }
 }
