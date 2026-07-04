@@ -1,7 +1,7 @@
 body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; margin:0; }
 .container { max-width: 900px; margin: 32px auto; padding: 0 16px; }
-.toolbar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px }
-.btn { padding:6px 10px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer }
+.toolbar { display:flex; gap:8px; flex-wrap:nowrap; align-items:center; overflow-x:auto; margin-bottom:12px; padding-bottom:4px }
+.btn { padding:6px 10px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer; white-space:nowrap; flex-shrink:0 }
 .btn.primary{ background:#0ea5a4; color:white; border-color:transparent }
 .card{ border:1px solid #e6e6e6; border-radius:8px; padding:12px; background:white }
 table { width:100%; border-collapse:collapse }
