@@ -448,12 +448,6 @@ function ResourcePanel({ resource, resourceMeta }) {
                   <p className="mt-1 text-sm text-slate-500">Add or update a room and reserve it for a class at a specific period.</p>
                   <div className="mt-4 space-y-3">
                     <input value={roomForm.name} onChange={(event) => setRoomForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Room name" required />
-                    <select value={roomForm.event_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, event_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                      <option value="">Select event</option>
-                      {eventOptions.map((event) => (
-                        <option key={event.id} value={event.id}>{event.name}</option>
-                      ))}
-                    </select>
                     <select value={roomForm.class_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, class_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                       <option value="">No class assigned</option>
                       {classOptions.map((classItem) => (
