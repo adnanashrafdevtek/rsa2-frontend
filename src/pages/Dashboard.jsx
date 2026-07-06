@@ -67,14 +67,19 @@ function ResourcePanel({ resource, resourceMeta }) {
   const [draftValues, setDraftValues] = useState({})
   const [selectedRow, setSelectedRow] = useState(null)
   const [adminMode, setAdminMode] = useState(() => {
-    if (typeof window === 'undefined') return 'Student'
-    return window.localStorage.getItem('planner-role') || 'Student'
+    if (typeof window === 'undefined') return 'Teacher'
+    return window.localStorage.getItem('planner-role') || 'Teacher'
   })
   const [classForm, setClassForm] = useState({ name: '', teacher_id: '', room_id: '', grade_level: '' })
   const [roomForm, setRoomForm] = useState({ name: '', event_id: '', class_id: '', period: '' })
+  const [editingClassId, setEditingClassId] = useState(null)
+  const [editingRoomId, setEditingRoomId] = useState(null)
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
-  const [adminAction, setAdminAction] = useState(null)
+  const [adminAction, setAdminAction] = useState(() => {
+    if (typeof window === 'undefined') return 'classes'
+    return window.localStorage.getItem('planner-admin-action') || 'classes'
+  })
 
   const { data, isLoading, error, refetch } = useQuery(
     ['backend', resource, filters],
@@ -94,14 +99,33 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedRow(null)
     setActionMessage('')
     setSelectedStudentIds([])
-    setAdminAction(null)
+    setEditingClassId(null)
+    setEditingRoomId(null)
+    setAdminAction(resource === 'classes' ? 'classes' : resource === 'rooms' ? 'rooms' : null)
   }, [resource])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('planner-role', adminMode)
+      window.localStorage.setItem('planner-admin-action', adminAction)
+      window.dispatchEvent(new Event('planner-admin-state-changed'))
     }
-  }, [adminMode])
+  }, [adminMode, adminAction])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const syncAdminState = () => {
+      const storedMode = window.localStorage.getItem('planner-role') || 'Teacher'
+      const storedAction = window.localStorage.getItem('planner-admin-action') || 'classes'
+      setAdminMode(storedMode)
+      setAdminAction(storedAction)
+    }
+
+    syncAdminState()
+    window.addEventListener('planner-admin-state-changed', syncAdminState)
+    return () => window.removeEventListener('planner-admin-state-changed', syncAdminState)
+  }, [])
 
   const rows = useMemo(() => {
     if (Array.isArray(data)) return data
@@ -178,10 +202,21 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const isAdmin = adminMode === 'Admin'
 
-  const handleCreateClass = async (event) => {
+  const resetClassForm = () => {
+    setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
+    setSelectedStudentIds([])
+    setEditingClassId(null)
+  }
+
+  const resetRoomForm = () => {
+    setRoomForm({ name: '', event_id: '', class_id: '', period: '' })
+    setEditingRoomId(null)
+  }
+
+  const handleCreateOrUpdateClass = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
-      setActionMessage('Only admin users can create classes.')
+      setActionMessage('Only admin users can manage classes.')
       return
     }
 
@@ -194,20 +229,25 @@ function ResourcePanel({ resource, resourceMeta }) {
         grade_level: classForm.grade_level.trim() || null
       }
 
-      await backend.create('classes', payload)
-      setActionMessage('Class created successfully.')
-      setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
-      setSelectedStudentIds([])
+      if (editingClassId) {
+        await backend.update('classes', editingClassId, payload)
+        setActionMessage('Class updated successfully.')
+      } else {
+        await backend.create('classes', payload)
+        setActionMessage('Class created successfully.')
+      }
+
+      resetClassForm()
       await refetch()
     } catch (submissionError) {
       setActionMessage(submissionError.message)
     }
   }
 
-  const handleCreateRoom = async (event) => {
+  const handleCreateOrUpdateRoom = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
-      setActionMessage('Only admin users can create rooms.')
+      setActionMessage('Only admin users can manage rooms.')
       return
     }
 
@@ -219,9 +259,62 @@ function ResourcePanel({ resource, resourceMeta }) {
         period: roomForm.period.trim()
       }
 
-      await backend.create('rooms', payload)
-      setActionMessage('Room created successfully.')
-      setRoomForm({ name: '', event_id: '', class_id: '', period: '' })
+      if (editingRoomId) {
+        await backend.update('rooms', editingRoomId, payload)
+        setActionMessage('Room updated successfully.')
+      } else {
+        await backend.create('rooms', payload)
+        setActionMessage('Room created successfully.')
+      }
+
+      resetRoomForm()
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleEditClass = (classItem) => {
+    setEditingClassId(classItem.id)
+    setClassForm({
+      name: classItem.name || '',
+      teacher_id: classItem.teacher_id || '',
+      room_id: classItem.room_id || '',
+      grade_level: classItem.grade_level || ''
+    })
+    setSelectedStudentIds([])
+    setAdminAction('classes')
+  }
+
+  const handleDeleteClass = async (classId) => {
+    if (!window.confirm('Delete this class?')) return
+    try {
+      await backend.remove('classes', classId)
+      setActionMessage('Class deleted successfully.')
+      if (selectedRow?.id === classId) setSelectedRow(null)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleEditRoom = (roomItem) => {
+    setEditingRoomId(roomItem.id)
+    setRoomForm({
+      name: roomItem.name || '',
+      event_id: roomItem.event_id || '',
+      class_id: roomItem.class_id || '',
+      period: roomItem.period || ''
+    })
+    setAdminAction('rooms')
+  }
+
+  const handleDeleteRoom = async (roomId) => {
+    if (!window.confirm('Delete this room?')) return
+    try {
+      await backend.remove('rooms', roomId)
+      setActionMessage('Room deleted successfully.')
+      if (selectedRow?.id === roomId) setSelectedRow(null)
       await refetch()
     } catch (submissionError) {
       setActionMessage(submissionError.message)
@@ -232,6 +325,8 @@ function ResourcePanel({ resource, resourceMeta }) {
     const values = Array.from(event.target.selectedOptions, (option) => option.value)
     setSelectedStudentIds(values)
   }
+
+  const showAdminManagement = ['classes', 'rooms'].includes(resource)
 
   return (
     <div className="space-y-6">
@@ -249,8 +344,9 @@ function ResourcePanel({ resource, resourceMeta }) {
             </label>
           ))}
           <div className="flex items-end gap-2">
-            <button type="submit" className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
-              <Search className="h-4 w-4" /> Search
+            <button type="submit" className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+              <Search className="h-4 w-4" />
+              Search
             </button>
             <button type="button" onClick={clearFilters} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
               Clear
@@ -259,7 +355,8 @@ function ResourcePanel({ resource, resourceMeta }) {
         </form>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      {showAdminManagement && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <h3 className="font-semibold text-slate-900">Admin management</h3>
@@ -269,8 +366,8 @@ function ResourcePanel({ resource, resourceMeta }) {
               <button type="button" onClick={() => setAdminMode('Admin')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${isAdmin ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                 Admin mode
               </button>
-              <button type="button" onClick={() => setAdminMode('Student')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                Student mode
+              <button type="button" onClick={() => setAdminMode('Teacher')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                Teacher mode
               </button>
             </div>
           </div>
@@ -283,23 +380,23 @@ function ResourcePanel({ resource, resourceMeta }) {
 
           {!isAdmin ? (
             <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-              Switch to admin mode to create classes and rooms.
+              Switch to admin mode to manage classes and rooms.
             </div>
           ) : (
             <div className="mt-4 space-y-4">
               <div className="flex flex-nowrap items-center gap-2">
                 <button type="button" onClick={() => setAdminAction('classes')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'classes' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                  Create Classes
+                  Manage Classes
                 </button>
                 <button type="button" onClick={() => setAdminAction('rooms')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'rooms' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                  Create Rooms
+                  Manage Rooms
                 </button>
               </div>
 
               {adminAction === 'classes' && (
-                <form onSubmit={handleCreateClass} className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="font-semibold text-slate-900">Create class</h4>
-                  <p className="mt-1 text-sm text-slate-500">Create a class, assign a teacher and room, and set the grade level in one step.</p>
+                <form onSubmit={handleCreateOrUpdateClass} className="rounded-xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-900">{editingClassId ? 'Edit class' : 'Create class'}</h4>
+                  <p className="mt-1 text-sm text-slate-500">Create or update a class, assign a teacher and room, and set the grade level in one step.</p>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <label className="space-y-1 text-sm text-slate-600">
                       <span className="font-medium">Class name</span>
@@ -336,14 +433,19 @@ function ResourcePanel({ resource, resourceMeta }) {
                       </select>
                     </label>
                   </div>
-                  <button type="submit" className="mt-4 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Create class</button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">{editingClassId ? 'Save changes' : 'Create class'}</button>
+                    {editingClassId ? (
+                      <button type="button" onClick={resetClassForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+                    ) : null}
+                  </div>
                 </form>
               )}
 
               {adminAction === 'rooms' && (
-                <form onSubmit={handleCreateRoom} className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="font-semibold text-slate-900">Create room</h4>
-                  <p className="mt-1 text-sm text-slate-500">Add a room and reserve it for a class at a specific period.</p>
+                <form onSubmit={handleCreateOrUpdateRoom} className="rounded-xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-900">{editingRoomId ? 'Edit room' : 'Create room'}</h4>
+                  <p className="mt-1 text-sm text-slate-500">Add or update a room and reserve it for a class at a specific period.</p>
                   <div className="mt-4 space-y-3">
                     <input value={roomForm.name} onChange={(event) => setRoomForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Room name" required />
                     <select value={roomForm.event_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, event_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
@@ -360,12 +462,47 @@ function ResourcePanel({ resource, resourceMeta }) {
                     </select>
                     <input value={roomForm.period} onChange={(event) => setRoomForm((prev) => ({ ...prev, period: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Period / time" />
                   </div>
-                  <button type="submit" className="mt-4 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Create room</button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">{editingRoomId ? 'Save changes' : 'Create room'}</button>
+                    {editingRoomId ? (
+                      <button type="button" onClick={resetRoomForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+                    ) : null}
+                  </div>
                 </form>
+              )}
+
+              {(adminAction === 'classes' || adminAction === 'rooms') && (
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-slate-900">Existing {adminAction === 'classes' ? 'classes' : 'rooms'}</h4>
+                    <span className="text-sm text-slate-500">{rows.length} total</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {rows.length > 0 ? rows.map((row) => (
+                      <div key={row.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="font-medium text-slate-900">{row.name}</div>
+                          {adminAction === 'classes' ? (
+                            <div className="text-sm text-slate-500">Teacher ID: {row.teacher_id ?? '—'} • Room ID: {row.room_id ?? '—'} • Grade: {row.grade_level ?? '—'}</div>
+                          ) : (
+                            <div className="text-sm text-slate-500">Event ID: {row.event_id ?? '—'} • Class ID: {row.class_id ?? '—'} • Period: {row.period ?? '—'}</div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => adminAction === 'classes' ? handleEditClass(row) : handleEditRoom(row)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Edit</button>
+                          <button type="button" onClick={() => adminAction === 'classes' ? handleDeleteClass(row.id) : handleDeleteRoom(row.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No {adminAction === 'classes' ? 'classes' : 'rooms'} available yet.</div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
         </div>
+      )}
 
       {(resource === 'rooms' || resource === 'classes') && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -462,9 +599,13 @@ function ResourcePanel({ resource, resourceMeta }) {
   )
 }
 
-export default function Dashboard() {
-  const [activeResource, setActiveResource] = useState('users')
+export default function Dashboard({ initialResource = 'users' }) {
+  const [activeResource, setActiveResource] = useState(initialResource)
   const activeMeta = RESOURCES.find((resource) => resource.id === activeResource) || RESOURCES[0]
+
+  useEffect(() => {
+    setActiveResource(initialResource)
+  }, [initialResource])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">

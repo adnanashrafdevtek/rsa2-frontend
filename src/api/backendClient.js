@@ -48,5 +48,16 @@ export default {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  },
+  update: async (resource, id, body = {}) => {
+    return request(`/${resource}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body)
+    });
+  },
+  remove: async (resource, id) => {
+    return request(`/${resource}/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
   }
 };
