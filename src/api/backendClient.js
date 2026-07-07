@@ -13,7 +13,7 @@ async function request(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
 
-  const role = typeof window !== 'undefined' ? window.localStorage.getItem('planner-role') : null;
+  const role = opts.userRole || (typeof window !== 'undefined' ? window.localStorage.getItem('planner-role') : null);
   if (role && !headers['x-user-role']) headers['x-user-role'] = role;
 
   const res = await fetch(BASE + path, { ...opts, headers });
@@ -49,10 +49,11 @@ export default {
       body: JSON.stringify(body)
     });
   },
-  update: async (resource, id, body = {}) => {
+  update: async (resource, id, body = {}, options = {}) => {
     return request(`/${resource}/${encodeURIComponent(id)}`, {
       method: 'PUT',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      ...options
     });
   },
   remove: async (resource, id) => {
