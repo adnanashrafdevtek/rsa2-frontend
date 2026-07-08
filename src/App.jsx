@@ -1,11 +1,22 @@
-import React from 'react'
-import Layout from './Layout'
-import Dashboard from './pages/Dashboard'
+import { useState } from 'react';
+import LoginForm from './components/ui/LoginForm';
+import Layout from './Layout'; 
+import BackendAdmin from './pages/BackendAdmin';
+import Dashboard from './pages/Dashboard';
 
-export default function App(){
+function App() {
+  const [user, setUser] = useState(null);
+
+  if (!user) {
+    return <LoginForm onLoginSuccess={(loggedInUser) => setUser(loggedInUser)} />;
+  }
+
   return (
     <Layout>
-      <Dashboard />
+      {/* Change this line to use either <BackendAdmin /> or <Dashboard /> */}
+      <BackendAdmin /> 
     </Layout>
-  )
+  );
 }
+
+export default App;
