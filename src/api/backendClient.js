@@ -13,13 +13,14 @@ async function request(path, opts = {}) {
   const headers = { ...(opts.headers || {}) };
   if (opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
 
-  const role = typeof window !== 'undefined' ? window.localStorage.getItem('planner-role') : null;
+  const role = opts.userRole || (typeof window !== 'undefined' ? window.localStorage.getItem('planner-role') : null);
   if (role && !headers['x-user-role']) headers['x-user-role'] = role;
 
   const res = await fetch(BASE + path, { ...opts, headers });
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || res.statusText);
+    const body = text ? `: ${text}` : '';
+    throw new Error(`Request failed ${res.status} ${res.statusText}${body}`);
   }
   try { return await res.json(); } catch { return null; }
 }
@@ -35,10 +36,29 @@ export default {
     const json = await request(url);
     return (json && json.mysqlResult) || json;
   },
+  uploadExcelFile: async (fileBuffer, fileName) => {
+    return request('/user/import-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBuffer, fileName })
+    })
+  },
   create: async (resource, body = {}) => {
     return request(`/${resource}`, {
       method: 'POST',
       body: JSON.stringify(body)
     });
+  },
+  update: async (resource, id, body = {}, options = {}) => {
+    return request(`/${resource}/${encodeURIComponent(id)}`, {
+      method: 'PUT',
+      body: JSON.stringify(body),
+      ...options
+    });
+  },
+  remove: async (resource, id) => {
+    return request(`/${resource}/${encodeURIComponent(id)}`, {
+      method: 'DELETE'
+    });
   }
-}
+};

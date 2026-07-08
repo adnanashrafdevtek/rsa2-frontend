@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Users, GraduationCap, MapPin, Calendar, MessageSquare, BookOpen, Users2, Building2, CalendarCheck, Search } from 'lucide-react'
+import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Users2, Building2, CalendarCheck, Search, CalendarDays } from 'lucide-react'
+
+function getRows(payload) {
+  if (Array.isArray(payload)) return payload
+  return (payload && payload.mysqlResult) || []
+}
 
 const RESOURCES = [
   { id: 'users', label: 'Users', icon: Users, fields: [
@@ -34,11 +39,10 @@ const RESOURCES = [
     { key: 'receiver_id', label: 'Receiver ID' },
     { key: 'message', label: 'Message' },
   ]},
-  { id: 'schedules', label: 'Schedules', icon: Calendar, fields: [
+  { id: 'schedules', label: 'Schedules', icon: CalendarDays, fields: [
     { key: 'id', label: 'ID' },
     { key: 'name', label: 'Name' },
-    { key: 'decription', label: 'Description' },
-    { key: 'event_id', label: 'Event ID' },
+    { key: 'description', label: 'Description' },
   ]},
   { id: 'student_classes', label: 'Student Classes', icon: GraduationCap, fields: [
     { key: 'id', label: 'ID' },
@@ -51,7 +55,7 @@ const RESOURCES = [
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
   ]},
-  { id: 'events', label: 'Events', icon: CalendarCheck, fields: [
+  { id: 'events', label: 'Announcements', icon: CalendarCheck, fields: [
     { key: 'id', label: 'ID' },
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
@@ -66,15 +70,27 @@ function ResourcePanel({ resource, resourceMeta }) {
   const [filters, setFilters] = useState({})
   const [draftValues, setDraftValues] = useState({})
   const [selectedRow, setSelectedRow] = useState(null)
+  const [currentUserId, setCurrentUserId] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return window.localStorage.getItem('planner-current-user-id') || ''
+  })
   const [adminMode, setAdminMode] = useState(() => {
-    if (typeof window === 'undefined') return 'Student'
-    return window.localStorage.getItem('planner-role') || 'Student'
+    if (typeof window === 'undefined') return 'Teacher'
+    return window.localStorage.getItem('planner-role') || 'Teacher'
   })
   const [classForm, setClassForm] = useState({ name: '', teacher_id: '', room_id: '', grade_level: '' })
   const [roomForm, setRoomForm] = useState({ name: '', event_id: '', class_id: '', period: '' })
+  const [editingClassId, setEditingClassId] = useState(null)
+  const [editingRoomId, setEditingRoomId] = useState(null)
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
-  const [adminAction, setAdminAction] = useState(null)
+  const [announcementForm, setAnnouncementForm] = useState({ name: '', description: '' })
+  const [scheduleUploadMessage, setScheduleUploadMessage] = useState('')
+  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
+  const [adminAction, setAdminAction] = useState(() => {
+    if (typeof window === 'undefined') return 'classes'
+    return window.localStorage.getItem('planner-admin-action') || 'classes'
+  })
 
   const { data, isLoading, error, refetch } = useQuery(
     ['backend', resource, filters],
@@ -82,8 +98,11 @@ function ResourcePanel({ resource, resourceMeta }) {
     { staleTime: 1000 * 30 }
   )
 
+  const { data: userOptionsData, refetch: refetchUsers } = useQuery(['backend', 'profile-users'], () => backend.list('users'), { staleTime: 1000 * 30 })
+  const { data: roleOptionsData, refetch: refetchRoles } = useQuery(['backend', 'profile-roles'], () => backend.list('roles'), { staleTime: 1000 * 30 })
   const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 1 }), { staleTime: 1000 * 30 })
   const { data: studentOptionsData } = useQuery(['backend', 'students'], () => backend.list('users', { role_id: 3 }), { staleTime: 1000 * 30 })
+  const { data: userSchedulesData, refetch: refetchSchedules } = useQuery(['backend', 'user-schedules'], () => backend.list('user_schedules'), { staleTime: 1000 * 30 })
   const { data: roomOptionsData } = useQuery(['backend', 'room-options'], () => backend.list('rooms'), { staleTime: 1000 * 30 })
   const { data: classOptionsData } = useQuery(['backend', 'class-options'], () => backend.list('classes'), { staleTime: 1000 * 30 })
   const { data: eventOptionsData } = useQuery(['backend', 'event-options'], () => backend.list('events'), { staleTime: 1000 * 30 })
@@ -94,19 +113,50 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedRow(null)
     setActionMessage('')
     setSelectedStudentIds([])
-    setAdminAction(null)
+    setEditingClassId(null)
+    setEditingRoomId(null)
+    setAdminAction(resource === 'classes' ? 'classes' : resource === 'rooms' ? 'rooms' : null)
   }, [resource])
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
       window.localStorage.setItem('planner-role', adminMode)
+      window.localStorage.setItem('planner-admin-action', adminAction)
+      window.dispatchEvent(new Event('planner-admin-state-changed'))
     }
-  }, [adminMode])
+  }, [adminMode, adminAction])
 
-  const rows = useMemo(() => {
-    if (Array.isArray(data)) return data
-    return (data && data.mysqlResult) || []
-  }, [data])
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    const syncAdminState = () => {
+      const storedMode = window.localStorage.getItem('planner-role') || 'Teacher'
+      const storedAction = window.localStorage.getItem('planner-admin-action') || 'classes'
+      setAdminMode(storedMode)
+      setAdminAction(storedAction)
+    }
+
+    syncAdminState()
+    window.addEventListener('planner-admin-state-changed', syncAdminState)
+    return () => window.removeEventListener('planner-admin-state-changed', syncAdminState)
+  }, [])
+
+  const rows = useMemo(() => getRows(data), [data])
+  const userOptions = useMemo(() => getRows(userOptionsData), [userOptionsData])
+  const userSchedules = useMemo(() => getRows(userSchedulesData), [userSchedulesData])
+  const visibleRows = useMemo(() => {
+    if (resource !== 'events') return rows
+
+    return [...rows].sort((left, right) => {
+      const leftId = Number(left?.id)
+      const rightId = Number(right?.id)
+      if (!Number.isNaN(leftId) && !Number.isNaN(rightId)) {
+        return rightId - leftId
+      }
+      return String(right?.name || '').localeCompare(String(left?.name || ''))
+    })
+  }, [resource, rows])
+  const roleOptions = useMemo(() => getRows(roleOptionsData), [roleOptionsData])
 
   const teacherOptions = useMemo(() => {
     if (Array.isArray(teacherOptionsData)) return teacherOptionsData
@@ -122,6 +172,48 @@ function ResourcePanel({ resource, resourceMeta }) {
     if (Array.isArray(roomOptionsData)) return roomOptionsData
     return (roomOptionsData && roomOptionsData.mysqlResult) || []
   }, [roomOptionsData])
+
+  const scheduleLookup = useMemo(() => {
+    return new Map(userSchedules.map((entry) => [`${entry.user_type}:${entry.user_id}`, entry]))
+  }, [userSchedules])
+
+  const currentUser = useMemo(() => {
+    if (!userOptions.length) return null
+    if (currentUserId) {
+      const match = userOptions.find((user) => String(user.id) === String(currentUserId))
+      if (match) return match
+    }
+    return userOptions[0]
+  }, [currentUserId, userOptions])
+
+  const currentUserRoleName = useMemo(() => {
+    const roleMap = Object.fromEntries(roleOptions.map((role) => [String(role.id), role.name]))
+    return currentUser ? roleMap[String(currentUser.role_id)] || `Role ${currentUser.role_id}` : 'Unassigned'
+  }, [currentUser, roleOptions])
+
+  useEffect(() => {
+    if (!userOptions.length) return
+
+    if (typeof window === 'undefined') return
+
+    const storedUserId = window.localStorage.getItem('planner-current-user-id')
+    if (storedUserId && userOptions.some((user) => String(user.id) === storedUserId)) {
+      setCurrentUserId(storedUserId)
+      return
+    }
+
+    const fallbackUserId = String(userOptions[0].id)
+    setCurrentUserId(fallbackUserId)
+  }, [userOptions])
+
+  useEffect(() => {
+    if (!currentUser || typeof window === 'undefined') return
+
+    window.localStorage.setItem('planner-current-user-id', String(currentUser.id))
+    window.localStorage.setItem('planner-current-user-name', `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim())
+    window.localStorage.setItem('planner-current-user-email', currentUser.email_address || '')
+    window.localStorage.setItem('planner-current-user-role', currentUserRoleName)
+  }, [currentUser, currentUserRoleName])
 
   const classOptions = useMemo(() => {
     if (Array.isArray(classOptionsData)) return classOptionsData
@@ -178,10 +270,21 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const isAdmin = adminMode === 'Admin'
 
-  const handleCreateClass = async (event) => {
+  const resetClassForm = () => {
+    setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
+    setSelectedStudentIds([])
+    setEditingClassId(null)
+  }
+
+  const resetRoomForm = () => {
+    setRoomForm({ name: '', event_id: '', class_id: '', period: '' })
+    setEditingRoomId(null)
+  }
+
+  const handleCreateOrUpdateClass = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
-      setActionMessage('Only admin users can create classes.')
+      setActionMessage('Only admin users can manage classes.')
       return
     }
 
@@ -194,20 +297,25 @@ function ResourcePanel({ resource, resourceMeta }) {
         grade_level: classForm.grade_level.trim() || null
       }
 
-      await backend.create('classes', payload)
-      setActionMessage('Class created successfully.')
-      setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
-      setSelectedStudentIds([])
+      if (editingClassId) {
+        await backend.update('classes', editingClassId, payload)
+        setActionMessage('Class updated successfully.')
+      } else {
+        await backend.create('classes', payload)
+        setActionMessage('Class created successfully.')
+      }
+
+      resetClassForm()
       await refetch()
     } catch (submissionError) {
       setActionMessage(submissionError.message)
     }
   }
 
-  const handleCreateRoom = async (event) => {
+  const handleCreateOrUpdateRoom = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
-      setActionMessage('Only admin users can create rooms.')
+      setActionMessage('Only admin users can manage rooms.')
       return
     }
 
@@ -219,12 +327,112 @@ function ResourcePanel({ resource, resourceMeta }) {
         period: roomForm.period.trim()
       }
 
-      await backend.create('rooms', payload)
-      setActionMessage('Room created successfully.')
-      setRoomForm({ name: '', event_id: '', class_id: '', period: '' })
+      if (editingRoomId) {
+        await backend.update('rooms', editingRoomId, payload)
+        setActionMessage('Room updated successfully.')
+      } else {
+        await backend.create('rooms', payload)
+        setActionMessage('Room created successfully.')
+      }
+
+      resetRoomForm()
       await refetch()
     } catch (submissionError) {
       setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleEditClass = (classItem) => {
+    setEditingClassId(classItem.id)
+    setClassForm({
+      name: classItem.name || '',
+      teacher_id: classItem.teacher_id || '',
+      room_id: classItem.room_id || '',
+      grade_level: classItem.grade_level || ''
+    })
+    setSelectedStudentIds([])
+    setAdminAction('classes')
+  }
+
+  const handleDeleteClass = async (classId) => {
+    if (!window.confirm('Delete this class?')) return
+    try {
+      await backend.remove('classes', classId)
+      setActionMessage('Class deleted successfully.')
+      if (selectedRow?.id === classId) setSelectedRow(null)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleEditRoom = (roomItem) => {
+    setEditingRoomId(roomItem.id)
+    setRoomForm({
+      name: roomItem.name || '',
+      event_id: roomItem.event_id || '',
+      class_id: roomItem.class_id || '',
+      period: roomItem.period || ''
+    })
+    setAdminAction('rooms')
+  }
+
+  const handleDeleteRoom = async (roomId) => {
+    if (!window.confirm('Delete this room?')) return
+    try {
+      await backend.remove('rooms', roomId)
+      setActionMessage('Room deleted successfully.')
+      if (selectedRow?.id === roomId) setSelectedRow(null)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleCreateAnnouncement = async (event) => {
+    event.preventDefault()
+    if (!isAdmin) {
+      setActionMessage('Only admin users can create announcements.')
+      return
+    }
+
+    try {
+      await backend.create('events', {
+        name: announcementForm.name.trim(),
+        description: announcementForm.description.trim()
+      })
+      setActionMessage('Announcement created successfully.')
+      setAnnouncementForm({ name: '', description: '' })
+      setShowAnnouncementForm(false)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleScheduleUpload = async (event, userId, userType) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!isAdmin) {
+      setScheduleUploadMessage('Only admin users can upload schedules.')
+      return
+    }
+
+    try {
+      const content = await file.text()
+      await backend.create('user_schedules', {
+        user_id: Number(userId),
+        user_type: userType,
+        file_name: file.name,
+        file_content: content
+      })
+      setScheduleUploadMessage(`Uploaded schedule for ${file.name}.`)
+      await refetchSchedules()
+    } catch (submissionError) {
+      setScheduleUploadMessage(submissionError.message)
+    } finally {
+      event.target.value = ''
     }
   }
 
@@ -233,8 +441,178 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedStudentIds(values)
   }
 
+  const showAdminManagement = ['classes', 'rooms'].includes(resource)
+
+  const handleAssignRole = async (roleName) => {
+    if (!currentUserId) {
+      setActionMessage('Select a user before assigning a role.')
+      return
+    }
+
+    const targetUser = userOptions.find((user) => String(user.id) === String(currentUserId))
+    try {
+      await backend.update('users', currentUserId, { role_name: roleName }, { userRole: 'Admin' })
+      setActionMessage(`Assigned ${roleName} role to ${targetUser ? `${targetUser.first_name} ${targetUser.last_name}` : 'the selected user'}.`)
+      await Promise.all([refetchUsers(), refetchRoles(), refetch()])
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
   return (
     <div className="space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="font-semibold text-slate-900">Profile</h3>
+            <p className="mt-1 text-sm text-slate-500">This account reflects the user you selected for the current session.</p>
+          </div>
+          <label className="w-full max-w-sm space-y-1 text-sm text-slate-600">
+            <span className="font-medium">Signed in as</span>
+            <select value={currentUserId} onChange={(event) => setCurrentUserId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+              {userOptions.map((user) => (
+                <option key={user.id} value={user.id}>{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Name</div>
+            <div className="mt-1 font-medium text-slate-900">{currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() : '—'}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Email</div>
+            <div className="mt-1 font-medium text-slate-900">{currentUser?.email_address || '—'}</div>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <div className="text-xs uppercase tracking-wide text-slate-400">Role</div>
+            <div className="mt-1 font-medium text-slate-900">{currentUserRoleName}</div>
+          </div>
+        </div>
+      </div>
+
+      {resource === 'events' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Announcements</h3>
+              <p className="mt-1 text-sm text-slate-500">Create updates for the community and keep the newest posts at the top.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowAnnouncementForm((prev) => !prev)}
+              className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
+              disabled={!isAdmin}
+            >
+              {showAnnouncementForm ? 'Cancel' : 'Create announcement'}
+            </button>
+          </div>
+
+          {showAnnouncementForm && (
+            <form onSubmit={handleCreateAnnouncement} className="mt-4 rounded-xl border border-slate-200 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Title</span>
+                  <input value={announcementForm.name} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Announcement title" required />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
+                  <span className="font-medium">Message</span>
+                  <textarea value={announcementForm.description} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, description: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the announcement" required />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Publish</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {resource === 'schedules' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Schedule management</h3>
+              <p className="mt-1 text-sm text-slate-500">Upload and review teacher and student schedules from one place.</p>
+            </div>
+          </div>
+
+          {scheduleUploadMessage && (
+            <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
+              {scheduleUploadMessage}
+            </div>
+          )}
+
+          <div className="mt-6 grid gap-6 xl:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-slate-900">Teachers</h4>
+                  <p className="text-sm text-slate-500">Upload a CSV schedule for each teacher.</p>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{teacherOptions.length}</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {teacherOptions.length > 0 ? teacherOptions.map((teacher) => {
+                  const uploadedSchedule = scheduleLookup.get(`teacher:${teacher.id}`)
+                  return (
+                    <div key={teacher.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="font-medium text-slate-900">{`${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`}</div>
+                          <div className="text-sm text-slate-500">{teacher.email_address || 'No email available'}</div>
+                          <div className="mt-1 text-sm text-slate-600">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                          <span>Upload CSV</span>
+                          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => handleScheduleUpload(event, teacher.id, 'teacher')} />
+                        </label>
+                      </div>
+                    </div>
+                  )
+                }) : (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No teachers found.</div>
+                )}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-semibold text-slate-900">Students</h4>
+                  <p className="text-sm text-slate-500">Upload a CSV schedule for each student.</p>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{studentOptions.length}</span>
+              </div>
+              <div className="mt-4 space-y-3">
+                {studentOptions.length > 0 ? studentOptions.map((student) => {
+                  const uploadedSchedule = scheduleLookup.get(`student:${student.id}`)
+                  return (
+                    <div key={student.id} className="rounded-xl border border-slate-200 bg-white p-3">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                        <div>
+                          <div className="font-medium text-slate-900">{`${student.first_name || ''} ${student.last_name || ''}`.trim() || student.email_address || `Student ${student.id}`}</div>
+                          <div className="text-sm text-slate-500">{student.email_address || 'No email available'}</div>
+                          <div className="mt-1 text-sm text-slate-600">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
+                        </div>
+                        <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                          <span>Upload CSV</span>
+                          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => handleScheduleUpload(event, student.id, 'student')} />
+                        </label>
+                      </div>
+                    </div>
+                  )
+                }) : (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No students found.</div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
         <form onSubmit={handleSubmit} className="grid gap-3 md:grid-cols-3 xl:grid-cols-4">
           {resourceMeta.fields.map((field) => (
@@ -249,8 +627,9 @@ function ResourcePanel({ resource, resourceMeta }) {
             </label>
           ))}
           <div className="flex items-end gap-2">
-            <button type="submit" className="flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
-              <Search className="h-4 w-4" /> Search
+            <button type="submit" className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+              <Search className="h-4 w-4" />
+              Search
             </button>
             <button type="button" onClick={clearFilters} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
               Clear
@@ -259,7 +638,51 @@ function ResourcePanel({ resource, resourceMeta }) {
         </form>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      {resource === 'roles' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Assign roles</h3>
+              <p className="mt-1 text-sm text-slate-500">Choose a user and grant them the Admin or Teacher role.</p>
+            </div>
+            <div className="w-full max-w-sm space-y-3">
+              <label className="space-y-1 text-sm text-slate-600">
+                <span className="font-medium">User</span>
+                <select value={currentUserId} onChange={(event) => setCurrentUserId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                  {userOptions.map((user) => (
+                    <option key={user.id} value={user.id}>{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}</option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => handleAssignRole('Admin')} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Assign Admin</button>
+                <button type="button" onClick={() => handleAssignRole('Teacher')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Assign Teacher</button>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {userOptions.map((user) => {
+              const userRole = roleOptions.find((role) => String(role.id) === String(user.role_id))?.name || `Role ${user.role_id}`
+              return (
+                <div key={user.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="font-medium text-slate-900">{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}</div>
+                    <div className="text-sm text-slate-500">{user.email_address || 'No email available'} • {userRole}</div>
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => handleAssignRole('Admin')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Admin</button>
+                    <button type="button" onClick={() => handleAssignRole('Teacher')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Teacher</button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {showAdminManagement && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
               <h3 className="font-semibold text-slate-900">Admin management</h3>
@@ -269,8 +692,8 @@ function ResourcePanel({ resource, resourceMeta }) {
               <button type="button" onClick={() => setAdminMode('Admin')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${isAdmin ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
                 Admin mode
               </button>
-              <button type="button" onClick={() => setAdminMode('Student')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                Student mode
+              <button type="button" onClick={() => setAdminMode('Teacher')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
+                Teacher mode
               </button>
             </div>
           </div>
@@ -283,23 +706,23 @@ function ResourcePanel({ resource, resourceMeta }) {
 
           {!isAdmin ? (
             <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-              Switch to admin mode to create classes and rooms.
+              Switch to admin mode to manage classes and rooms.
             </div>
           ) : (
             <div className="mt-4 space-y-4">
               <div className="flex flex-nowrap items-center gap-2">
                 <button type="button" onClick={() => setAdminAction('classes')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'classes' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                  Create Classes
+                  Manage Classes
                 </button>
                 <button type="button" onClick={() => setAdminAction('rooms')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'rooms' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                  Create Rooms
+                  Manage Rooms
                 </button>
               </div>
 
               {adminAction === 'classes' && (
-                <form onSubmit={handleCreateClass} className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="font-semibold text-slate-900">Create class</h4>
-                  <p className="mt-1 text-sm text-slate-500">Create a class, assign a teacher and room, and set the grade level in one step.</p>
+                <form onSubmit={handleCreateOrUpdateClass} className="rounded-xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-900">{editingClassId ? 'Edit class' : 'Create class'}</h4>
+                  <p className="mt-1 text-sm text-slate-500">Create or update a class, assign a teacher and room, and set the grade level in one step.</p>
                   <div className="mt-4 grid gap-3 md:grid-cols-2">
                     <label className="space-y-1 text-sm text-slate-600">
                       <span className="font-medium">Class name</span>
@@ -336,22 +759,21 @@ function ResourcePanel({ resource, resourceMeta }) {
                       </select>
                     </label>
                   </div>
-                  <button type="submit" className="mt-4 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Create class</button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">{editingClassId ? 'Save changes' : 'Create class'}</button>
+                    {editingClassId ? (
+                      <button type="button" onClick={resetClassForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+                    ) : null}
+                  </div>
                 </form>
               )}
 
               {adminAction === 'rooms' && (
-                <form onSubmit={handleCreateRoom} className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="font-semibold text-slate-900">Create room</h4>
-                  <p className="mt-1 text-sm text-slate-500">Add a room and reserve it for a class at a specific period.</p>
+                <form onSubmit={handleCreateOrUpdateRoom} className="rounded-xl border border-slate-200 p-4">
+                  <h4 className="font-semibold text-slate-900">{editingRoomId ? 'Edit room' : 'Create room'}</h4>
+                  <p className="mt-1 text-sm text-slate-500">Add or update a room and reserve it for a class at a specific period.</p>
                   <div className="mt-4 space-y-3">
                     <input value={roomForm.name} onChange={(event) => setRoomForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Room name" required />
-                    <select value={roomForm.event_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, event_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                      <option value="">Select event</option>
-                      {eventOptions.map((event) => (
-                        <option key={event.id} value={event.id}>{event.name}</option>
-                      ))}
-                    </select>
                     <select value={roomForm.class_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, class_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
                       <option value="">No class assigned</option>
                       {classOptions.map((classItem) => (
@@ -360,12 +782,47 @@ function ResourcePanel({ resource, resourceMeta }) {
                     </select>
                     <input value={roomForm.period} onChange={(event) => setRoomForm((prev) => ({ ...prev, period: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Period / time" />
                   </div>
-                  <button type="submit" className="mt-4 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Create room</button>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">{editingRoomId ? 'Save changes' : 'Create room'}</button>
+                    {editingRoomId ? (
+                      <button type="button" onClick={resetRoomForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
+                    ) : null}
+                  </div>
                 </form>
+              )}
+
+              {(adminAction === 'classes' || adminAction === 'rooms') && (
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-semibold text-slate-900">Existing {adminAction === 'classes' ? 'classes' : 'rooms'}</h4>
+                    <span className="text-sm text-slate-500">{rows.length} total</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {rows.length > 0 ? rows.map((row) => (
+                      <div key={row.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <div className="font-medium text-slate-900">{row.name}</div>
+                          {adminAction === 'classes' ? (
+                            <div className="text-sm text-slate-500">Teacher ID: {row.teacher_id ?? '—'} • Room ID: {row.room_id ?? '—'} • Grade: {row.grade_level ?? '—'}</div>
+                          ) : (
+                            <div className="text-sm text-slate-500">Event ID: {row.event_id ?? '—'} • Class ID: {row.class_id ?? '—'} • Period: {row.period ?? '—'}</div>
+                          )}
+                        </div>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => adminAction === 'classes' ? handleEditClass(row) : handleEditRoom(row)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Edit</button>
+                          <button type="button" onClick={() => adminAction === 'classes' ? handleDeleteClass(row.id) : handleDeleteRoom(row.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
+                        </div>
+                      </div>
+                    )) : (
+                      <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No {adminAction === 'classes' ? 'classes' : 'rooms'} available yet.</div>
+                    )}
+                  </div>
+                </div>
               )}
             </div>
           )}
         </div>
+      )}
 
       {(resource === 'rooms' || resource === 'classes') && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -406,26 +863,26 @@ function ResourcePanel({ resource, resourceMeta }) {
             <div className="p-6 text-slate-500">Loading...</div>
           ) : error ? (
             <div className="p-6 text-red-600">Error: {String(error.message)}</div>
-          ) : rows.length === 0 ? (
+          ) : visibleRows.length === 0 ? (
             <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
           ) : (
             <div className="overflow-auto">
               <table className="min-w-full text-sm">
                 <thead className="bg-slate-50 text-left text-slate-700">
                   <tr>
-                    {Object.keys(rows[0]).map((col) => (
+                    {Object.keys(visibleRows[0]).map((col) => (
                       <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, index) => (
+                  {visibleRows.map((row, index) => (
                     <tr
                       key={`${resource}-${index}`}
                       className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 ${selectedRow === row ? 'bg-teal-50/60' : 'bg-white'}`}
                       onClick={() => setSelectedRow(row)}
                     >
-                      {Object.keys(rows[0]).map((col) => (
+                      {Object.keys(visibleRows[0]).map((col) => (
                         <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
                           {String(row[col] ?? '')}
                         </td>
@@ -462,9 +919,13 @@ function ResourcePanel({ resource, resourceMeta }) {
   )
 }
 
-export default function Dashboard() {
-  const [activeResource, setActiveResource] = useState('users')
+export default function Dashboard({ initialResource = 'users' }) {
+  const [activeResource, setActiveResource] = useState(initialResource)
   const activeMeta = RESOURCES.find((resource) => resource.id === activeResource) || RESOURCES[0]
+
+  useEffect(() => {
+    setActiveResource(initialResource)
+  }, [initialResource])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
