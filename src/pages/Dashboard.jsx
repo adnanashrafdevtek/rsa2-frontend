@@ -322,7 +322,7 @@ function ResourcePanel({ resource, resourceMeta }) {
     try {
       const payload = {
         name: roomForm.name.trim(),
-        event_id: Number(roomForm.event_id),
+        event_id: roomForm.event_id === '' ? '' : Number(roomForm.event_id),
         class_id: roomForm.class_id ? Number(roomForm.class_id) : null,
         period: roomForm.period.trim()
       }
