@@ -81,6 +81,7 @@ export default function Layout({ children }) {
 
   const nav = [
     { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/" },
+    { label: "Teacher Dashboard", icon: BookOpen, id: "teacher-dashboard", href: "/teacher-dashboard" },
     { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
     { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/schedules" },
     { label: "Announcements", icon: Bell, id: "announcements", href: "/events" },

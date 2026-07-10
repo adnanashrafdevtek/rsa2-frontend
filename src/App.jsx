@@ -2,6 +2,7 @@ import React from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Layout from './Layout'
 import Dashboard from './pages/Dashboard'
+import TeacherDashboard from './pages/TeacherDashboard'
 import ExcelUploadPage from './pages/ExcelUploadPage'
 
 export default function App(){
@@ -10,6 +11,7 @@ export default function App(){
       <Layout>
         <Routes>
           <Route path="/" element={<Dashboard />} />
+          <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
           <Route path="/classes" element={<Dashboard initialResource="classes" />} />
           <Route path="/rooms" element={<Dashboard initialResource="rooms" />} />
           <Route path="/schedules" element={<Dashboard initialResource="schedules" />} />
