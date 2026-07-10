@@ -4,6 +4,7 @@ import Layout from './Layout'
 import Dashboard from './pages/Dashboard'
 import TeacherDashboard from './pages/TeacherDashboard'
 import ExcelUploadPage from './pages/ExcelUploadPage'
+import ProfilePage from './pages/ProfilePage'
 
 export default function App(){
   return (
@@ -16,6 +17,7 @@ export default function App(){
           <Route path="/rooms" element={<Dashboard initialResource="rooms" />} />
           <Route path="/schedules" element={<Dashboard initialResource="schedules" />} />
           <Route path="/events" element={<Dashboard initialResource="events" />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/admin/upload-excel" element={<ExcelUploadPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

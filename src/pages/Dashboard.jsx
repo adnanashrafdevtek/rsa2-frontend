@@ -461,38 +461,6 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   return (
     <div className="space-y-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <h3 className="font-semibold text-slate-900">Profile</h3>
-            <p className="mt-1 text-sm text-slate-500">This account reflects the user you selected for the current session.</p>
-          </div>
-          <label className="w-full max-w-sm space-y-1 text-sm text-slate-600">
-            <span className="font-medium">Signed in as</span>
-            <select value={currentUserId} onChange={(event) => setCurrentUserId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-              {userOptions.map((user) => (
-                <option key={user.id} value={user.id}>{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}</option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div className="mt-4 grid gap-3 md:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Name</div>
-            <div className="mt-1 font-medium text-slate-900">{currentUser ? `${currentUser.first_name || ''} ${currentUser.last_name || ''}`.trim() : '—'}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Email</div>
-            <div className="mt-1 font-medium text-slate-900">{currentUser?.email_address || '—'}</div>
-          </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="text-xs uppercase tracking-wide text-slate-400">Role</div>
-            <div className="mt-1 font-medium text-slate-900">{currentUserRoleName}</div>
-          </div>
-        </div>
-      </div>
-
       {resource === 'events' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">

@@ -85,7 +85,7 @@ export default function Layout({ children }) {
     { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
     { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/schedules" },
     { label: "Announcements", icon: Bell, id: "announcements", href: "/events" },
-    { label: "Profile", icon: User, id: "profile", href: "/" },
+    { label: "Profile", icon: User, id: "profile", href: "/profile" },
   ]
 
   const isAdmin = adminMode === 'Admin'
