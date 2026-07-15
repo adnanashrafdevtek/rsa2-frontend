@@ -69,7 +69,6 @@ const RESOURCES = [
 function ResourcePanel({ resource, resourceMeta }) {
   const [filters, setFilters] = useState({})
   const [draftValues, setDraftValues] = useState({})
-  const [selectedRow, setSelectedRow] = useState(null)
   const [currentUserId, setCurrentUserId] = useState(() => {
     if (typeof window === 'undefined') return ''
     return window.localStorage.getItem('planner-current-user-id') || ''
@@ -110,7 +109,6 @@ function ResourcePanel({ resource, resourceMeta }) {
   useEffect(() => {
     setFilters({})
     setDraftValues({})
-    setSelectedRow(null)
     setActionMessage('')
     setSelectedStudentIds([])
     setEditingClassId(null)
@@ -815,73 +813,50 @@ function ResourcePanel({ resource, resourceMeta }) {
         </div>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
-        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-            <div>
-              <h3 className="font-semibold text-slate-900">{resourceMeta.label}</h3>
-              <p className="text-sm text-slate-500">Browse records and filter by any supported field.</p>
-            </div>
-            <button onClick={() => refetch()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-              Refresh
-            </button>
+      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
+          <div>
+            <h3 className="font-semibold text-slate-900">{resourceMeta.label}</h3>
+            <p className="text-sm text-slate-500">Browse records and filter by any supported field.</p>
           </div>
+          <button onClick={() => refetch()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+            Refresh
+          </button>
+        </div>
 
-          {isLoading ? (
-            <div className="p-6 text-slate-500">Loading...</div>
-          ) : error ? (
-            <div className="p-6 text-red-600">Error: {String(error.message)}</div>
-          ) : visibleRows.length === 0 ? (
-            <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
-          ) : (
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-50 text-left text-slate-700">
-                  <tr>
+        {isLoading ? (
+          <div className="p-6 text-slate-500">Loading...</div>
+        ) : error ? (
+          <div className="p-6 text-red-600">Error: {String(error.message)}</div>
+        ) : visibleRows.length === 0 ? (
+          <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-left text-slate-700">
+                <tr>
+                  {Object.keys(visibleRows[0]).map((col) => (
+                    <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visibleRows.map((row, index) => (
+                  <tr
+                    key={`${resource}-${index}`}
+                    className="border-t border-slate-100 bg-white hover:bg-slate-50"
+                  >
                     {Object.keys(visibleRows[0]).map((col) => (
-                      <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col}</th>
+                      <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                        {String(row[col] ?? '')}
+                      </td>
                     ))}
                   </tr>
-                </thead>
-                <tbody>
-                  {visibleRows.map((row, index) => (
-                    <tr
-                      key={`${resource}-${index}`}
-                      className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 ${selectedRow === row ? 'bg-teal-50/60' : 'bg-white'}`}
-                      onClick={() => setSelectedRow(row)}
-                    >
-                      {Object.keys(visibleRows[0]).map((col) => (
-                        <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                          {String(row[col] ?? '')}
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-slate-900 p-4 text-white shadow-sm">
-          <h3 className="text-lg font-semibold">Selected record</h3>
-          <p className="mt-1 text-sm text-slate-300">Click a row to inspect its values.</p>
-
-          {selectedRow ? (
-            <div className="mt-4 space-y-3">
-              {Object.entries(selectedRow).map(([key, value]) => (
-                <div key={key} className="rounded-lg bg-white/10 p-3">
-                  <div className="text-xs uppercase tracking-wide text-slate-400">{key}</div>
-                  <div className="mt-1 break-words text-sm text-white">{String(value ?? '')}</div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-700 p-4 text-sm text-slate-400">
-              No record selected yet.
-            </div>
-          )}
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
