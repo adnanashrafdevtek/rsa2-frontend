@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Users2, Building2, CalendarCheck, Search, CalendarDays } from 'lucide-react'
+import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil } from 'lucide-react'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -11,21 +11,15 @@ function getRows(payload) {
 
 const RESOURCES = [
   { id: 'users', label: 'Users', icon: Users, fields: [
-    { key: 'id', label: 'ID' },
     { key: 'first_name', label: 'First Name' },
     { key: 'last_name', label: 'Last Name' },
     { key: 'email_address', label: 'Email' },
-    { key: 'role_id', label: 'Role ID' },
-  ]},
-  { id: 'roles', label: 'Roles', icon: Users2, fields: [
-    { key: 'id', label: 'ID' },
-    { key: 'name', label: 'Name' },
+    { key: 'role_name', label: 'Role' },
   ]},
   { id: 'classes', label: 'Classes', icon: BookOpen, fields: [
-    { key: 'id', label: 'ID' },
-    { key: 'name', label: 'Name' },
-    { key: 'teacher_id', label: 'Teacher ID' },
-    { key: 'room_id', label: 'Room ID' },
+    { key: 'name', label: 'Class Name' },
+    { key: 'teacher_id', label: 'Teacher Name' },
+    { key: 'room_id', label: 'Room Name' },
     { key: 'grade_level', label: 'Grade Level' },
   ]},
   { id: 'rooms', label: 'Rooms', icon: MapPin, fields: [
@@ -80,6 +74,7 @@ function ResourcePanel({ resource, resourceMeta }) {
   const [classForm, setClassForm] = useState({ name: '', teacher_id: '', room_id: '', grade_level: '' })
   const [roomForm, setRoomForm] = useState({ name: '', event_id: '', class_id: '', period: '' })
   const [editingClassId, setEditingClassId] = useState(null)
+  const [showClassForm, setShowClassForm] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState(null)
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
@@ -112,6 +107,7 @@ function ResourcePanel({ resource, resourceMeta }) {
     setActionMessage('')
     setSelectedStudentIds([])
     setEditingClassId(null)
+    setShowClassForm(false)
     setEditingRoomId(null)
     setAdminAction(resource === 'classes' ? 'classes' : resource === 'rooms' ? 'rooms' : null)
   }, [resource])
@@ -186,7 +182,7 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const currentUserRoleName = useMemo(() => {
     const roleMap = Object.fromEntries(roleOptions.map((role) => [String(role.id), role.name]))
-    return currentUser ? roleMap[String(currentUser.role_id)] || `Role ${currentUser.role_id}` : 'Unassigned'
+    return currentUser ? roleMap[String(currentUser.role_id)] || currentUser.role_name || `Role ${currentUser.role_id}` : 'Unassigned'
   }, [currentUser, roleOptions])
 
   useEffect(() => {
@@ -272,6 +268,15 @@ function ResourcePanel({ resource, resourceMeta }) {
     setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
     setSelectedStudentIds([])
     setEditingClassId(null)
+    setShowClassForm(false)
+  }
+
+  const openCreateClassForm = () => {
+    setEditingClassId(null)
+    setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
+    setSelectedStudentIds([])
+    setShowClassForm(true)
+    setAdminAction('classes')
   }
 
   const resetRoomForm = () => {
@@ -349,6 +354,7 @@ function ResourcePanel({ resource, resourceMeta }) {
       grade_level: classItem.grade_level || ''
     })
     setSelectedStudentIds([])
+    setShowClassForm(true)
     setAdminAction('classes')
   }
 
@@ -439,8 +445,6 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedStudentIds(values)
   }
 
-  const showAdminManagement = ['classes', 'rooms'].includes(resource)
-
   const handleAssignRole = async (roleName) => {
     if (!currentUserId) {
       setActionMessage('Select a user before assigning a role.')
@@ -451,6 +455,29 @@ function ResourcePanel({ resource, resourceMeta }) {
     try {
       await backend.update('users', currentUserId, { role_name: roleName }, { userRole: 'Admin' })
       setActionMessage(`Assigned ${roleName} role to ${targetUser ? `${targetUser.first_name} ${targetUser.last_name}` : 'the selected user'}.`)
+      await Promise.all([refetchUsers(), refetchRoles(), refetch()])
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleChangeUserRole = async (user, roleName) => {
+    try {
+      await backend.update('users', user.id, { role_name: roleName }, { userRole: 'Admin' })
+      setActionMessage(`Updated ${user.first_name || 'User'}'s role to ${roleName}.`)
+      await Promise.all([refetchUsers(), refetchRoles(), refetch()])
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleDeleteUser = async (user) => {
+    const label = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`
+    if (!window.confirm(`Completely remove ${label} from the system?`)) return
+
+    try {
+      await backend.remove('users', user.id, { userRole: 'Admin' })
+      setActionMessage(`Removed ${label} completely.`)
       await Promise.all([refetchUsers(), refetchRoles(), refetch()])
     } catch (submissionError) {
       setActionMessage(submissionError.message)
@@ -604,225 +631,130 @@ function ResourcePanel({ resource, resourceMeta }) {
         </form>
       </div>
 
-      {resource === 'roles' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-900">Assign roles</h3>
-              <p className="mt-1 text-sm text-slate-500">Choose a user and grant them the Admin or Teacher role.</p>
-            </div>
-            <div className="w-full max-w-sm space-y-3">
-              <label className="space-y-1 text-sm text-slate-600">
-                <span className="font-medium">User</span>
-                <select value={currentUserId} onChange={(event) => setCurrentUserId(event.target.value)} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                  {userOptions.map((user) => (
-                    <option key={user.id} value={user.id}>{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}</option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex flex-wrap gap-2">
-                <button type="button" onClick={() => handleAssignRole('Admin')} className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Assign Admin</button>
-                <button type="button" onClick={() => handleAssignRole('Teacher')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Assign Teacher</button>
-              </div>
-            </div>
-          </div>
 
-          <div className="mt-4 space-y-2">
-            {userOptions.map((user) => {
-              const userRole = roleOptions.find((role) => String(role.id) === String(user.role_id))?.name || `Role ${user.role_id}`
-              return (
-                <div key={user.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <div className="font-medium text-slate-900">{`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}</div>
-                    <div className="text-sm text-slate-500">{user.email_address || 'No email available'} • {userRole}</div>
-                  </div>
-                  <div className="flex gap-2">
-                    <button type="button" onClick={() => handleAssignRole('Admin')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Admin</button>
-                    <button type="button" onClick={() => handleAssignRole('Teacher')} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Teacher</button>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </div>
-      )}
-
-      {showAdminManagement && (
+      {resource === 'classes' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div className="min-w-0">
-              <h3 className="font-semibold text-slate-900">Admin management</h3>
-              <p className="text-sm text-slate-500">Use admin mode to create classes, assign students, and add rooms for specific periods.</p>
+            <div>
+              <h3 className="font-semibold text-slate-900">Classes</h3>
+              <p className="mt-1 text-sm text-slate-500">Create, edit, and manage classes from this panel.</p>
             </div>
-            <div className="flex flex-nowrap items-center gap-2">
-              <button type="button" onClick={() => setAdminMode('Admin')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${isAdmin ? 'bg-teal-600 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                Admin mode
-              </button>
-              <button type="button" onClick={() => setAdminMode('Teacher')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                Teacher mode
-              </button>
-            </div>
+            <button type="button" onClick={openCreateClassForm} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700" disabled={!isAdmin}>
+              <Plus className="h-4 w-4" />
+              Create class
+            </button>
           </div>
 
           {actionMessage && (
-            <div className="mt-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
+            <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
               {actionMessage}
             </div>
           )}
 
-          {!isAdmin ? (
-            <div className="mt-4 rounded-lg border border-dashed border-slate-300 p-4 text-sm text-slate-500">
-              Switch to admin mode to manage classes and rooms.
-            </div>
-          ) : (
-            <div className="mt-4 space-y-4">
-              <div className="flex flex-nowrap items-center gap-2">
-                <button type="button" onClick={() => setAdminAction('classes')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'classes' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                  Manage Classes
-                </button>
-                <button type="button" onClick={() => setAdminAction('rooms')} className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium transition-colors ${adminAction === 'rooms' ? 'bg-teal-600 text-white shadow-sm' : 'border border-slate-300 text-slate-600 hover:bg-slate-50'}`}>
-                  Manage Rooms
-                </button>
+          {showClassForm && (
+            <form onSubmit={handleCreateOrUpdateClass} className="mt-4 rounded-xl border border-slate-200 p-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Class name</span>
+                  <input value={classForm.name} onChange={(event) => setClassForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Algebra 1" required />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Teacher</span>
+                  <select value={classForm.teacher_id} onChange={(event) => setClassForm((prev) => ({ ...prev, teacher_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">Select teacher</option>
+                    {teacherOptions.map((teacher) => (
+                      <option key={teacher.id} value={teacher.id}>
+                        {`${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Room</span>
+                  <select value={classForm.room_id} onChange={(event) => setClassForm((prev) => ({ ...prev, room_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
+                    <option value="">Select room</option>
+                    {roomOptions.map((room) => (
+                      <option key={room.id} value={room.id}>
+                        {room.name || `Room ${room.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-3">
+                  <span className="font-medium">Grade level</span>
+                  <input value={classForm.grade_level} onChange={(event) => setClassForm((prev) => ({ ...prev, grade_level: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. 10" />
+                </label>
               </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                  {editingClassId ? 'Save changes' : 'Create class'}
+                </button>
+                {editingClassId && (
+                  <button type="button" onClick={resetClassForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
 
-              {adminAction === 'classes' && (
-                <form onSubmit={handleCreateOrUpdateClass} className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="font-semibold text-slate-900">{editingClassId ? 'Edit class' : 'Create class'}</h4>
-                  <p className="mt-1 text-sm text-slate-500">Create or update a class, assign a teacher and room, and set the grade level in one step.</p>
-                  <div className="mt-4 grid gap-3 md:grid-cols-2">
-                    <label className="space-y-1 text-sm text-slate-600">
-                      <span className="font-medium">Class name</span>
-                      <input value={classForm.name} onChange={(event) => setClassForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Enter class name" required />
-                    </label>
-                    <label className="space-y-1 text-sm text-slate-600">
-                      <span className="font-medium">Teacher</span>
-                      <select value={classForm.teacher_id} onChange={(event) => setClassForm((prev) => ({ ...prev, teacher_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                        <option value="">Select teacher</option>
-                        {teacherOptions.map((teacher) => (
-                          <option key={teacher.id} value={teacher.id}>{`${teacher.first_name} ${teacher.last_name}`}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-1 text-sm text-slate-600">
-                      <span className="font-medium">Room</span>
-                      <select value={classForm.room_id} onChange={(event) => setClassForm((prev) => ({ ...prev, room_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                        <option value="">Select room</option>
-                        {roomOptions.map((room) => (
-                          <option key={room.id} value={room.id}>{room.name}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className="space-y-1 text-sm text-slate-600">
-                      <span className="font-medium">Grade level</span>
-                      <input value={classForm.grade_level} onChange={(event) => setClassForm((prev) => ({ ...prev, grade_level: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. 10" />
-                    </label>
-                    <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
-                      <span className="font-medium">Assign students</span>
-                      <select multiple value={selectedStudentIds} onChange={handleStudentSelection} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" size="4">
-                        {studentOptions.map((student) => (
-                          <option key={student.id} value={student.id}>{`${student.first_name} ${student.last_name}`}</option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">{editingClassId ? 'Save changes' : 'Create class'}</button>
-                    {editingClassId ? (
-                      <button type="button" onClick={resetClassForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-                    ) : null}
-                  </div>
-                </form>
-              )}
+          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleRows.length > 0 ? visibleRows.map((row) => {
+              const teacherName = teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.first_name || teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.last_name
+                ? `${teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.first_name || ''} ${teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.last_name || ''}`.trim()
+                : row.teacher_id || '—'
+              const roomName = roomOptions.find((entry) => String(entry.id) === String(row.room_id))?.name || row.room_id || '—'
 
-              {adminAction === 'rooms' && (
-                <form onSubmit={handleCreateOrUpdateRoom} className="rounded-xl border border-slate-200 p-4">
-                  <h4 className="font-semibold text-slate-900">{editingRoomId ? 'Edit room' : 'Create room'}</h4>
-                  <p className="mt-1 text-sm text-slate-500">Add or update a room and reserve it for a class at a specific period.</p>
-                  <div className="mt-4 space-y-3">
-                    <input value={roomForm.name} onChange={(event) => setRoomForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Room name" required />
-                    <select value={roomForm.class_id} onChange={(event) => setRoomForm((prev) => ({ ...prev, class_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                      <option value="">No class assigned</option>
-                      {classOptions.map((classItem) => (
-                        <option key={classItem.id} value={classItem.id}>{classItem.name}</option>
-                      ))}
-                    </select>
-                    <input value={roomForm.period} onChange={(event) => setRoomForm((prev) => ({ ...prev, period: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Period / time" />
-                  </div>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">{editingRoomId ? 'Save changes' : 'Create room'}</button>
-                    {editingRoomId ? (
-                      <button type="button" onClick={resetRoomForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">Cancel</button>
-                    ) : null}
-                  </div>
-                </form>
-              )}
-
-              {(adminAction === 'classes' || adminAction === 'rooms') && (
-                <div className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-semibold text-slate-900">Existing {adminAction === 'classes' ? 'classes' : 'rooms'}</h4>
-                    <span className="text-sm text-slate-500">{rows.length} total</span>
-                  </div>
-                  <div className="mt-3 space-y-2">
-                    {rows.length > 0 ? rows.map((row) => (
-                      <div key={row.id} className="flex flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <div className="font-medium text-slate-900">{row.name}</div>
-                          {adminAction === 'classes' ? (
-                            <div className="text-sm text-slate-500">Teacher ID: {row.teacher_id ?? '—'} • Room ID: {row.room_id ?? '—'} • Grade: {row.grade_level ?? '—'}</div>
-                          ) : (
-                            <div className="text-sm text-slate-500">Event ID: {row.event_id ?? '—'} • Class ID: {row.class_id ?? '—'} • Period: {row.period ?? '—'}</div>
-                          )}
-                        </div>
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => adminAction === 'classes' ? handleEditClass(row) : handleEditRoom(row)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-white">Edit</button>
-                          <button type="button" onClick={() => adminAction === 'classes' ? handleDeleteClass(row.id) : handleDeleteRoom(row.id)} className="rounded-lg border border-red-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50">Delete</button>
-                        </div>
-                      </div>
-                    )) : (
-                      <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No {adminAction === 'classes' ? 'classes' : 'rooms'} available yet.</div>
-                    )}
+              return (
+                <div key={`class-${row.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-900">{row.name || 'Untitled class'}</div>
+                      <div className="mt-1 text-sm text-slate-600">Teacher: {teacherName}</div>
+                      <div className="text-sm text-slate-600">Room: {roomName}</div>
+                      <div className="text-sm text-slate-600">Grade: {row.grade_level || '—'}</div>
+                    </div>
+                  <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleEditClass(row)}
+                        className="rounded-lg border border-slate-300 p-2 text-slate-600 transition hover:bg-slate-50"
+                        aria-label={`Edit ${row.name || 'class'}`}
+                        disabled={!isAdmin}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteClass(row.id)}
+                        className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
+                        aria-label={`Delete ${row.name || 'class'}`}
+                        disabled={!isAdmin}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
-      {(resource === 'rooms' || resource === 'classes') && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-900">Classroom timetable</h3>
-              <p className="text-sm text-slate-500">A quick view of room allocations and periods.</p>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {roomScheduleCards.length > 0 ? roomScheduleCards.map((item) => (
-              <div key={item.key} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                <div className="font-semibold text-slate-900">{item.title}</div>
-                <div className="mt-1 text-sm text-slate-600">Class: {item.className}</div>
-                <div className="text-sm text-slate-600">Period: {item.period}</div>
-              </div>
-            )) : (
-              <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500">No timetable entries yet.</div>
+              )
+            }) : (
+              <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 md:col-span-2 xl:col-span-3">No classes found.</div>
             )}
           </div>
         </div>
       )}
 
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
-          <div>
-            <h3 className="font-semibold text-slate-900">{resourceMeta.label}</h3>
-            <p className="text-sm text-slate-500">Browse records and filter by any supported field.</p>
+      {resource !== 'classes' && (
+        <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
+            <div>
+              <h3 className="font-semibold text-slate-900">{resourceMeta.label}</h3>
+              <p className="text-sm text-slate-500">Browse records and filter by any supported field.</p>
+            </div>
+            <button onClick={() => refetch()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+              Refresh
+            </button>
           </div>
-          <button onClick={() => refetch()} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-            Refresh
-          </button>
-        </div>
 
         {isLoading ? (
           <div className="p-6 text-slate-500">Loading...</div>
@@ -835,22 +767,63 @@ function ResourcePanel({ resource, resourceMeta }) {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-slate-700">
                 <tr>
-                  {Object.keys(visibleRows[0]).map((col) => (
-                    <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col}</th>
-                  ))}
+                  {resource === 'users' ? (
+                    <>
+                      <th className="whitespace-nowrap px-3 py-3 font-medium">First Name</th>
+                      <th className="whitespace-nowrap px-3 py-3 font-medium">Last Name</th>
+                      <th className="whitespace-nowrap px-3 py-3 font-medium">Email</th>
+                      <th className="whitespace-nowrap px-3 py-3 font-medium">Role</th>
+                      <th className="whitespace-nowrap px-3 py-3 font-medium">Delete</th>
+                    </>
+                  ) : (
+                    Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
+                      <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col}</th>
+                    ))
+                  )}
                 </tr>
               </thead>
               <tbody>
                 {visibleRows.map((row, index) => (
                   <tr
-                    key={`${resource}-${index}`}
+                    key={`${resource}-${row.id ?? index}`}
                     className="border-t border-slate-100 bg-white hover:bg-slate-50"
                   >
-                    {Object.keys(visibleRows[0]).map((col) => (
-                      <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                        {String(row[col] ?? '')}
-                      </td>
-                    ))}
+                    {resource === 'users' ? (
+                      <>
+                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.first_name ?? ''}</td>
+                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.last_name ?? ''}</td>
+                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.email_address ?? ''}</td>
+                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                          <select
+                            value={row.role_name || row.role_id || ''}
+                            onChange={(event) => handleChangeUserRole(row, event.target.value)}
+                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-teal-500"
+                          >
+                            {roleOptions.map((role) => (
+                              <option key={role.id} value={role.name}>
+                                {role.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteUser(row)}
+                            className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
+                            aria-label={`Delete ${row.first_name || 'user'}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </td>
+                      </>
+                    ) : (
+                      Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
+                        <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                          {String(row[col] ?? '')}
+                        </td>
+                      ))
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -858,6 +831,7 @@ function ResourcePanel({ resource, resourceMeta }) {
           </div>
         )}
       </div>
+      )}
     </div>
   )
 }

@@ -43,10 +43,11 @@ export default {
       body: JSON.stringify({ fileBuffer, fileName })
     })
   },
-  create: async (resource, body = {}) => {
+  create: async (resource, body = {}, options = {}) => {
     return request(`/${resource}`, {
       method: 'POST',
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      ...options
     });
   },
   update: async (resource, id, body = {}, options = {}) => {
@@ -56,9 +57,10 @@ export default {
       ...options
     });
   },
-  remove: async (resource, id) => {
+  remove: async (resource, id, options = {}) => {
     return request(`/${resource}/${encodeURIComponent(id)}`, {
-      method: 'DELETE'
+      method: 'DELETE',
+      ...options
     });
   }
 };
