@@ -43,15 +43,38 @@ const RESOURCES = [
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
   ]},
-  { id: 'events', label: 'Announcements', icon: CalendarCheck, fields: [
+  { id: 'events', label: 'Events', icon: CalendarCheck, fields: [
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
-  ]},
-  { id: 'club_has_event', label: 'Club Events', icon: CalendarCheck, fields: [
-    { key: 'club_id', label: 'Club ID' },
-    { key: 'event_id', label: 'Event ID' },
+    { key: 'room', label: 'Room' },
+    { key: 'date', label: 'Date' },
   ]},
 ]
+
+function formatEventDateTime(value) {
+  if (!value) return ''
+  const normalized = String(value).replace(' ', 'T')
+  const parsed = new Date(normalized)
+  if (Number.isNaN(parsed.getTime())) return String(value)
+
+  const year = parsed.getFullYear()
+  const month = String(parsed.getMonth() + 1).padStart(2, '0')
+  const day = String(parsed.getDate()).padStart(2, '0')
+  const hours = String(parsed.getHours()).padStart(2, '0')
+  const minutes = String(parsed.getMinutes()).padStart(2, '0')
+
+  return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+function normalizeEventDateTime(value) {
+  if (!value) return ''
+  const text = String(value).trim().replace('T', ' ')
+  if (!text) return ''
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(text)) {
+    return `${text}:00`
+  }
+  return text
+}
 
 function ResourcePanel({ resource, resourceMeta }) {
   const [filters, setFilters] = useState({})
@@ -72,11 +95,13 @@ function ResourcePanel({ resource, resourceMeta }) {
   const [showRoomForm, setShowRoomForm] = useState(false)
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
-  const [announcementForm, setAnnouncementForm] = useState({ name: '', description: '' })
+  const [eventForm, setEventForm] = useState({ name: '', description: '', room: '', date: '' })
   const [messageForm, setMessageForm] = useState({ receiver_id: '', message: '' })
   const [scheduleUploadMessage, setScheduleUploadMessage] = useState('')
   const [scheduleImportMessage, setScheduleImportMessage] = useState('')
-  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
+  const [selectedTeacherScheduleId, setSelectedTeacherScheduleId] = useState('')
+  const [selectedStudentScheduleId, setSelectedStudentScheduleId] = useState('')
+  const [showEventForm, setShowEventForm] = useState(false)
   const [showMessageForm, setShowMessageForm] = useState(false)
   const [adminAction, setAdminAction] = useState(() => {
     if (typeof window === 'undefined') return 'classes'
@@ -112,6 +137,10 @@ function ResourcePanel({ resource, resourceMeta }) {
     setEditingRoomId(null)
     setShowRoomForm(false)
     setScheduleImportMessage('')
+    setSelectedTeacherScheduleId('')
+    setSelectedStudentScheduleId('')
+    setEventForm({ name: '', description: '', room: '', date: '' })
+    setShowEventForm(false)
     setAdminAction(resource === 'classes' ? 'classes' : resource === 'rooms' ? 'rooms' : null)
   }, [resource])
 
@@ -143,14 +172,26 @@ function ResourcePanel({ resource, resourceMeta }) {
   const userSchedules = useMemo(() => getRows(userSchedulesData), [userSchedulesData])
   const visibleRows = useMemo(() => {
     if (resource === 'events') {
-      return [...rows].sort((left, right) => {
-        const leftId = Number(left?.id)
-        const rightId = Number(right?.id)
-        if (!Number.isNaN(leftId) && !Number.isNaN(rightId)) {
-          return rightId - leftId
-        }
-        return String(right?.name || '').localeCompare(String(left?.name || ''))
-      })
+      const now = new Date()
+      const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+      return [...rows]
+        .filter((row) => String(row?.date || '').slice(0, 7) === currentMonthKey)
+        .sort((left, right) => {
+          const leftDate = String(left?.date || '')
+          const rightDate = String(right?.date || '')
+          if (leftDate !== rightDate) {
+            return rightDate.localeCompare(leftDate)
+          }
+
+          const leftId = Number(left?.id)
+          const rightId = Number(right?.id)
+          if (!Number.isNaN(leftId) && !Number.isNaN(rightId)) {
+            return rightId - leftId
+          }
+
+          return String(right?.name || '').localeCompare(String(left?.name || ''))
+        })
     }
 
     if (resource === 'messages') {
@@ -425,21 +466,23 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
-  const handleCreateAnnouncement = async (event) => {
+  const handleCreateEvent = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
-      setActionMessage('Only admin users can create announcements.')
+      setActionMessage('Only admin users can create events.')
       return
     }
 
     try {
       await backend.create('events', {
-        name: announcementForm.name.trim(),
-        description: announcementForm.description.trim()
+        name: eventForm.name.trim(),
+        description: eventForm.description.trim(),
+        room: eventForm.room.trim(),
+        date: normalizeEventDateTime(eventForm.date)
       })
-      setActionMessage('Announcement created successfully.')
-      setAnnouncementForm({ name: '', description: '' })
-      setShowAnnouncementForm(false)
+      setActionMessage('Event created successfully.')
+      setEventForm({ name: '', description: '', room: '', date: '' })
+      setShowEventForm(false)
       await refetch()
     } catch (submissionError) {
       setActionMessage(submissionError.message)
@@ -592,36 +635,48 @@ function ResourcePanel({ resource, resourceMeta }) {
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="font-semibold text-slate-900">Announcements</h3>
-              <p className="mt-1 text-sm text-slate-500">Create updates for the community and keep the newest posts at the top.</p>
+              <h3 className="font-semibold text-slate-900">Events</h3>
+              <p className="mt-1 text-sm text-slate-500">Create events for the current month and keep the schedule current.</p>
             </div>
             <button
               type="button"
-              onClick={() => setShowAnnouncementForm((prev) => !prev)}
+              onClick={() => setShowEventForm((prev) => !prev)}
               className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
               disabled={!isAdmin}
             >
-              {showAnnouncementForm ? 'Cancel' : 'Create announcement'}
+              {showEventForm ? 'Cancel' : 'Add event'}
             </button>
           </div>
 
-          {showAnnouncementForm && (
-            <form onSubmit={handleCreateAnnouncement} className="mt-4 rounded-xl border border-slate-200 p-4">
+          {showEventForm && (
+            <form onSubmit={handleCreateEvent} className="mt-4 rounded-xl border border-slate-200 p-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm text-slate-600">
-                  <span className="font-medium">Title</span>
-                  <input value={announcementForm.name} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Announcement title" required />
+                  <span className="font-medium">Name</span>
+                  <input value={eventForm.name} onChange={(event) => setEventForm((prev) => ({ ...prev, name: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Event name" required />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Room</span>
+                  <input value={eventForm.room} onChange={(event) => setEventForm((prev) => ({ ...prev, room: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Room name" required />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Date</span>
+                  <input type="datetime-local" value={eventForm.date} onChange={(event) => setEventForm((prev) => ({ ...prev, date: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required />
                 </label>
                 <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
-                  <span className="font-medium">Message</span>
-                  <textarea value={announcementForm.description} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, description: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the announcement" required />
+                  <span className="font-medium">Description</span>
+                  <textarea value={eventForm.description} onChange={(event) => setEventForm((prev) => ({ ...prev, description: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Event description" required />
                 </label>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Publish</button>
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Add event</button>
               </div>
             </form>
           )}
+
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Showing events for the current month from the Events table.
+          </div>
         </div>
       )}
 
@@ -708,30 +763,52 @@ function ResourcePanel({ resource, resourceMeta }) {
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-semibold text-slate-900">Teachers</h4>
-                  <p className="text-sm text-slate-500">Upload a CSV schedule for each teacher.</p>
+                  <p className="text-sm text-slate-500">Choose one teacher and upload a CSV for that schedule.</p>
                 </div>
                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{teacherOptions.length}</span>
               </div>
-              <div className="mt-4 space-y-3">
-                {teacherOptions.length > 0 ? teacherOptions.map((teacher) => {
-                  const uploadedSchedule = scheduleLookup.get(`teacher:${teacher.id}`)
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <label className="space-y-1 text-sm text-slate-600">
+                    <span className="font-medium">Teacher name</span>
+                    <select
+                      value={selectedTeacherScheduleId}
+                      onChange={(event) => setSelectedTeacherScheduleId(event.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select teacher</option>
+                      {teacherOptions.map((teacher) => (
+                        <option key={teacher.id} value={teacher.id}>
+                          {`${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                    <span>Upload CSV</span>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="sr-only"
+                      disabled={!selectedTeacherScheduleId}
+                      onChange={(event) => handleScheduleUpload(event, selectedTeacherScheduleId, 'teacher')}
+                    />
+                  </label>
+                </div>
+                {teacherOptions.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No teachers found.</div>
+                ) : selectedTeacherScheduleId ? (() => {
+                  const teacher = teacherOptions.find((entry) => String(entry.id) === String(selectedTeacherScheduleId))
+                  const uploadedSchedule = scheduleLookup.get(`teacher:${selectedTeacherScheduleId}`)
                   return (
-                    <div key={teacher.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="font-medium text-slate-900">{`${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`}</div>
-                          <div className="text-sm text-slate-500">{teacher.email_address || 'No email available'}</div>
-                          <div className="mt-1 text-sm text-slate-600">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
-                        </div>
-                        <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                          <span>Upload CSV</span>
-                          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => handleScheduleUpload(event, teacher.id, 'teacher')} />
-                        </label>
-                      </div>
+                    <div className="mt-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-900">{`${teacher?.first_name || ''} ${teacher?.last_name || ''}`.trim() || teacher?.email_address || `Teacher ${selectedTeacherScheduleId}`}</div>
+                      <div>{teacher?.email_address || 'No email available'}</div>
+                      <div className="mt-1">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
                     </div>
                   )
-                }) : (
-                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No teachers found.</div>
+                })() : (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">Select a teacher to view the uploaded schedule.</div>
                 )}
               </div>
             </div>
@@ -740,30 +817,52 @@ function ResourcePanel({ resource, resourceMeta }) {
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="font-semibold text-slate-900">Students</h4>
-                  <p className="text-sm text-slate-500">Upload a CSV schedule for each student.</p>
+                  <p className="text-sm text-slate-500">Choose one student and upload a CSV for that schedule.</p>
                 </div>
                 <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{studentOptions.length}</span>
               </div>
-              <div className="mt-4 space-y-3">
-                {studentOptions.length > 0 ? studentOptions.map((student) => {
-                  const uploadedSchedule = scheduleLookup.get(`student:${student.id}`)
+              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
+                  <label className="space-y-1 text-sm text-slate-600">
+                    <span className="font-medium">Student name</span>
+                    <select
+                      value={selectedStudentScheduleId}
+                      onChange={(event) => setSelectedStudentScheduleId(event.target.value)}
+                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    >
+                      <option value="">Select student</option>
+                      {studentOptions.map((student) => (
+                        <option key={student.id} value={student.id}>
+                          {`${student.first_name || ''} ${student.last_name || ''}`.trim() || student.email_address || `Student ${student.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                    <span>Upload CSV</span>
+                    <input
+                      type="file"
+                      accept=".csv,text/csv"
+                      className="sr-only"
+                      disabled={!selectedStudentScheduleId}
+                      onChange={(event) => handleScheduleUpload(event, selectedStudentScheduleId, 'student')}
+                    />
+                  </label>
+                </div>
+                {studentOptions.length === 0 ? (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No students found.</div>
+                ) : selectedStudentScheduleId ? (() => {
+                  const student = studentOptions.find((entry) => String(entry.id) === String(selectedStudentScheduleId))
+                  const uploadedSchedule = scheduleLookup.get(`student:${selectedStudentScheduleId}`)
                   return (
-                    <div key={student.id} className="rounded-xl border border-slate-200 bg-white p-3">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <div className="font-medium text-slate-900">{`${student.first_name || ''} ${student.last_name || ''}`.trim() || student.email_address || `Student ${student.id}`}</div>
-                          <div className="text-sm text-slate-500">{student.email_address || 'No email available'}</div>
-                          <div className="mt-1 text-sm text-slate-600">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
-                        </div>
-                        <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                          <span>Upload CSV</span>
-                          <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(event) => handleScheduleUpload(event, student.id, 'student')} />
-                        </label>
-                      </div>
+                    <div className="mt-3 text-sm text-slate-600">
+                      <div className="font-medium text-slate-900">{`${student?.first_name || ''} ${student?.last_name || ''}`.trim() || student?.email_address || `Student ${selectedStudentScheduleId}`}</div>
+                      <div>{student?.email_address || 'No email available'}</div>
+                      <div className="mt-1">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
                     </div>
                   )
-                }) : (
-                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No students found.</div>
+                })() : (
+                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">Select a student to view the uploaded schedule.</div>
                 )}
               </div>
             </div>
@@ -776,7 +875,14 @@ function ResourcePanel({ resource, resourceMeta }) {
           {resourceMeta.fields.map((field) => (
             <label key={field.key} className="space-y-1 text-sm text-slate-600">
               <span className="font-medium">{field.label}</span>
-              {resource === 'users' && field.key === 'role_id' ? (
+              {resource === 'events' && field.key === 'date' ? (
+                <input
+                  type="datetime-local"
+                  value={draftValues[field.key] ?? ''}
+                  onChange={(event) => setDraftValues((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-0 focus:border-teal-500"
+                />
+              ) : resource === 'users' && field.key === 'role_id' ? (
                 <select
                   value={draftValues[field.key] ?? ''}
                   onChange={(event) => setDraftValues((prev) => ({ ...prev, [field.key]: event.target.value }))}
@@ -1066,6 +1172,13 @@ function ResourcePanel({ resource, resourceMeta }) {
                       <th className="whitespace-nowrap px-3 py-3 font-medium">Role</th>
                       <th className="whitespace-nowrap px-3 py-3 font-medium">Delete</th>
                     </>
+                  ) : resource === 'events' ? (
+                    <>
+                      <th className="whitespace-nowrap px-3 py-3 font-medium">ID</th>
+                      {resourceMeta.fields.map((field) => (
+                        <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
+                      ))}
+                    </>
                   ) : resource === 'schedules' ? (
                     resourceMeta.fields.map((field) => (
                       <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
@@ -1112,6 +1225,15 @@ function ResourcePanel({ resource, resourceMeta }) {
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </td>
+                      </>
+                    ) : resource === 'events' ? (
+                      <>
+                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.id ?? ''}</td>
+                        {resourceMeta.fields.map((field) => (
+                          <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                            {field.key === 'date' ? formatEventDateTime(row[field.key]) : String(row[field.key] ?? '')}
+                          </td>
+                        ))}
                       </>
                     ) : resource === 'schedules' ? (
                       resourceMeta.fields.map((field) => (
