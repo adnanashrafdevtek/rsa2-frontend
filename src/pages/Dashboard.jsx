@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil } from 'lucide-react'
+import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload } from 'lucide-react'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -14,7 +14,7 @@ const RESOURCES = [
     { key: 'first_name', label: 'First Name' },
     { key: 'last_name', label: 'Last Name' },
     { key: 'email_address', label: 'Email' },
-    { key: 'role_name', label: 'Role' },
+    { key: 'role_id', label: 'Role' },
   ]},
   { id: 'classes', label: 'Classes', icon: BookOpen, fields: [
     { key: 'name', label: 'Class Name' },
@@ -23,9 +23,7 @@ const RESOURCES = [
     { key: 'grade_level', label: 'Grade Level' },
   ]},
   { id: 'rooms', label: 'Rooms', icon: MapPin, fields: [
-    { key: 'id', label: 'ID' },
-    { key: 'name', label: 'Name' },
-    { key: 'event_id', label: 'Event ID' },
+    { key: 'name', label: 'Room' },
   ]},
   { id: 'messages', label: 'Messages', icon: MessageSquare, fields: [
     { key: 'sender_name', label: 'Sender Name' },
@@ -33,17 +31,19 @@ const RESOURCES = [
     { key: 'message', label: 'Message' },
   ]},
   { id: 'schedules', label: 'Schedules', icon: CalendarDays, fields: [
-    { key: 'id', label: 'ID' },
-    { key: 'name', label: 'Name' },
-    { key: 'description', label: 'Description' },
+    { key: 'student_id', label: 'Student ID' },
+    { key: 'student_name', label: 'Student Name' },
+    { key: 'time', label: 'Time' },
+    { key: 'period', label: 'Period' },
+    { key: 'teacher', label: 'Teacher' },
+    { key: 'room', label: 'Room' },
+    { key: 'class_name', label: 'Class Name' },
   ]},
   { id: 'clubs', label: 'Clubs', icon: Building2, fields: [
-    { key: 'id', label: 'ID' },
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
   ]},
   { id: 'events', label: 'Announcements', icon: CalendarCheck, fields: [
-    { key: 'id', label: 'ID' },
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
   ]},
@@ -65,15 +65,17 @@ function ResourcePanel({ resource, resourceMeta }) {
     return window.localStorage.getItem('planner-role') || 'Teacher'
   })
   const [classForm, setClassForm] = useState({ name: '', teacher_id: '', room_id: '', grade_level: '' })
-  const [roomForm, setRoomForm] = useState({ name: '', event_id: '', class_id: '', period: '' })
+  const [roomForm, setRoomForm] = useState({ name: '', class_id: '', period: '' })
   const [editingClassId, setEditingClassId] = useState(null)
   const [showClassForm, setShowClassForm] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState(null)
+  const [showRoomForm, setShowRoomForm] = useState(false)
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
   const [announcementForm, setAnnouncementForm] = useState({ name: '', description: '' })
   const [messageForm, setMessageForm] = useState({ receiver_id: '', message: '' })
   const [scheduleUploadMessage, setScheduleUploadMessage] = useState('')
+  const [scheduleImportMessage, setScheduleImportMessage] = useState('')
   const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
   const [showMessageForm, setShowMessageForm] = useState(false)
   const [adminAction, setAdminAction] = useState(() => {
@@ -81,9 +83,13 @@ function ResourcePanel({ resource, resourceMeta }) {
     return window.localStorage.getItem('planner-admin-action') || 'classes'
   })
 
+  const queryFilters = useMemo(() => {
+    return filters
+  }, [filters])
+
   const { data, isLoading, error, refetch } = useQuery(
-    ['backend', resource, filters],
-    () => backend.list(resource, filters),
+    ['backend', resource, queryFilters],
+    () => backend.list(resource, queryFilters),
     { staleTime: 1000 * 30 }
   )
 
@@ -104,6 +110,8 @@ function ResourcePanel({ resource, resourceMeta }) {
     setEditingClassId(null)
     setShowClassForm(false)
     setEditingRoomId(null)
+    setShowRoomForm(false)
+    setScheduleImportMessage('')
     setAdminAction(resource === 'classes' ? 'classes' : resource === 'rooms' ? 'rooms' : null)
   }, [resource])
 
@@ -297,8 +305,16 @@ function ResourcePanel({ resource, resourceMeta }) {
   }
 
   const resetRoomForm = () => {
-    setRoomForm({ name: '', event_id: '', class_id: '', period: '' })
+    setRoomForm({ name: '', class_id: '', period: '' })
     setEditingRoomId(null)
+    setShowRoomForm(false)
+  }
+
+  const openCreateRoomForm = () => {
+    setEditingRoomId(null)
+    setRoomForm({ name: '', class_id: '', period: '' })
+    setShowRoomForm(true)
+    setAdminAction('rooms')
   }
 
   const handleCreateOrUpdateClass = async (event) => {
@@ -342,7 +358,6 @@ function ResourcePanel({ resource, resourceMeta }) {
     try {
       const payload = {
         name: roomForm.name.trim(),
-        event_id: roomForm.event_id === '' ? '' : Number(roomForm.event_id),
         class_id: roomForm.class_id ? Number(roomForm.class_id) : null,
         period: roomForm.period.trim()
       }
@@ -391,10 +406,10 @@ function ResourcePanel({ resource, resourceMeta }) {
     setEditingRoomId(roomItem.id)
     setRoomForm({
       name: roomItem.name || '',
-      event_id: roomItem.event_id || '',
       class_id: roomItem.class_id || '',
       period: roomItem.period || ''
     })
+    setShowRoomForm(true)
     setAdminAction('rooms')
   }
 
@@ -470,16 +485,44 @@ function ResourcePanel({ resource, resourceMeta }) {
 
     try {
       const content = await file.text()
-      await backend.create('user_schedules', {
+      const result = await backend.create('user_schedules', {
         user_id: Number(userId),
         user_type: userType,
         file_name: file.name,
         file_content: content
       })
-      setScheduleUploadMessage(`Uploaded schedule for ${file.name}.`)
+      const importedCount = Number(result?.importedCount || 0)
+      const importedMessage = importedCount > 0 ? ` and saved ${importedCount} schedule row${importedCount === 1 ? '' : 's'}` : ''
+      setScheduleUploadMessage(`Uploaded schedule for ${file.name}${importedMessage}.`)
       await refetchSchedules()
     } catch (submissionError) {
       setScheduleUploadMessage(submissionError.message)
+    } finally {
+      event.target.value = ''
+    }
+  }
+
+  const handleScheduleSpreadsheetUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    if (!isAdmin) {
+      setScheduleImportMessage('Only admin users can import schedules.')
+      return
+    }
+
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+      const result = await backend.uploadScheduleFile(base64, file.name)
+      const messagePrefix = `Imported ${result.insertedCount || 0} schedule rows successfully.`
+      const rowErrors = result.errors?.length
+        ? ` ${result.errors.map((item) => `Row ${item.index}: ${item.message}`).join(' | ')}`
+        : ''
+      setScheduleImportMessage(`${messagePrefix}${rowErrors}`)
+      await refetch()
+    } catch (submissionError) {
+      setScheduleImportMessage(submissionError.message)
     } finally {
       event.target.value = ''
     }
@@ -631,8 +674,27 @@ function ResourcePanel({ resource, resourceMeta }) {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="font-semibold text-slate-900">Schedule management</h3>
-              <p className="mt-1 text-sm text-slate-500">Upload and review teacher and student schedules from one place.</p>
+              <p className="mt-1 text-sm text-slate-500">Import spreadsheet rows and review the full schedule table from one place.</p>
             </div>
+          </div>
+
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h4 className="font-semibold text-slate-900">Import schedule spreadsheet</h4>
+                <p className="text-sm text-slate-500">Expected columns: student_id, student_name, time, period, teacher, room, class_name.</p>
+              </div>
+              <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                <Upload className="h-4 w-4" />
+                Upload spreadsheet
+                <input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={handleScheduleSpreadsheetUpload} />
+              </label>
+            </div>
+            {scheduleImportMessage && (
+              <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
+                {scheduleImportMessage}
+              </div>
+            )}
           </div>
 
           {scheduleUploadMessage && (
@@ -714,12 +776,27 @@ function ResourcePanel({ resource, resourceMeta }) {
           {resourceMeta.fields.map((field) => (
             <label key={field.key} className="space-y-1 text-sm text-slate-600">
               <span className="font-medium">{field.label}</span>
-              <input
-                value={draftValues[field.key] ?? ''}
-                onChange={(event) => setDraftValues((prev) => ({ ...prev, [field.key]: event.target.value }))}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-0 focus:border-teal-500"
-                placeholder={field.label}
-              />
+              {resource === 'users' && field.key === 'role_id' ? (
+                <select
+                  value={draftValues[field.key] ?? ''}
+                  onChange={(event) => setDraftValues((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-0 focus:border-teal-500"
+                >
+                  <option value="">Select role</option>
+                  {roleOptions.map((role) => (
+                    <option key={role.id} value={String(role.id)}>
+                      {role.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={draftValues[field.key] ?? ''}
+                  onChange={(event) => setDraftValues((prev) => ({ ...prev, [field.key]: event.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none ring-0 focus:border-teal-500"
+                  placeholder={field.label}
+                />
+              )}
             </label>
           ))}
           <div className="flex items-end gap-2">
@@ -847,7 +924,118 @@ function ResourcePanel({ resource, resourceMeta }) {
         </div>
       )}
 
-      {resource !== 'classes' && (
+      {resource === 'rooms' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Rooms</h3>
+              <p className="mt-1 text-sm text-slate-500">Add rooms, search by room name, and manage the room list.</p>
+            </div>
+            <button type="button" onClick={openCreateRoomForm} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700" disabled={!isAdmin}>
+              <Plus className="h-4 w-4" />
+              Add room
+            </button>
+          </div>
+
+          {actionMessage && (
+            <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
+              {actionMessage}
+            </div>
+          )}
+
+          {showRoomForm && (
+            <form onSubmit={handleCreateOrUpdateRoom} className="mt-4 rounded-xl border border-slate-200 p-4">
+              <div className="grid gap-3 md:grid-cols-3">
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
+                  <span className="font-medium">Room</span>
+                  <input
+                    value={roomForm.name}
+                    onChange={(event) => setRoomForm((prev) => ({ ...prev, name: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="e.g. Room 101"
+                    required
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Class</span>
+                  <select
+                    value={roomForm.class_id}
+                    onChange={(event) => setRoomForm((prev) => ({ ...prev, class_id: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Select class</option>
+                    {classOptions.map((classItem) => (
+                      <option key={classItem.id} value={classItem.id}>
+                        {classItem.name || `Class ${classItem.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-3">
+                  <span className="font-medium">Period</span>
+                  <input
+                    value={roomForm.period}
+                    onChange={(event) => setRoomForm((prev) => ({ ...prev, period: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="e.g. Period 2"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                  {editingRoomId ? 'Save changes' : 'Create room'}
+                </button>
+                {editingRoomId && (
+                  <button type="button" onClick={resetRoomForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </form>
+          )}
+
+          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {visibleRows.length > 0 ? visibleRows.map((row) => {
+              const linkedClass = classOptions.find((entry) => String(entry.id) === String(row.class_id))
+              return (
+                <div key={`room-${row.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <div className="font-semibold text-slate-900">{row.name || 'Untitled room'}</div>
+                      <div className="mt-1 text-sm text-slate-600">Class: {linkedClass?.name || row.class_id || '—'}</div>
+                      <div className="text-sm text-slate-600">Period: {row.period || '—'}</div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleEditRoom(row)}
+                        className="rounded-lg border border-slate-300 p-2 text-slate-600 transition hover:bg-slate-50"
+                        aria-label={`Edit ${row.name || 'room'}`}
+                        disabled={!isAdmin}
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteRoom(row.id)}
+                        className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
+                        aria-label={`Delete ${row.name || 'room'}`}
+                        disabled={!isAdmin}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )
+            }) : (
+              <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 md:col-span-2 xl:col-span-3">No rooms found.</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {resource !== 'classes' && resource !== 'rooms' && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
@@ -878,6 +1066,10 @@ function ResourcePanel({ resource, resourceMeta }) {
                       <th className="whitespace-nowrap px-3 py-3 font-medium">Role</th>
                       <th className="whitespace-nowrap px-3 py-3 font-medium">Delete</th>
                     </>
+                  ) : resource === 'schedules' ? (
+                    resourceMeta.fields.map((field) => (
+                      <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
+                    ))
                   ) : (
                     Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
                       <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col === 'sender_id' ? 'Sender' : col === 'receiver_id' ? 'Receiver' : col}</th>
@@ -921,6 +1113,12 @@ function ResourcePanel({ resource, resourceMeta }) {
                           </button>
                         </td>
                       </>
+                    ) : resource === 'schedules' ? (
+                      resourceMeta.fields.map((field) => (
+                        <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                          {String(row[field.key] ?? '')}
+                        </td>
+                      ))
                     ) : (
                       Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => {
                         if (resource === 'messages' && (col === 'sender_id' || col === 'receiver_id')) {

@@ -90,14 +90,18 @@ export default function BackendAdmin(){
               <table>
                 <thead>
                   <tr>
-                    {Object.keys(rows[0]).map(col => <th key={col}>{col}</th>)}
+                    {resource === 'schedules'
+                      ? ['student_id', 'student_name', 'time', 'period', 'teacher', 'room', 'class_name'].map((col) => <th key={col}>{col}</th>)
+                      : Object.keys(rows[0]).map(col => <th key={col}>{col}</th>)}
                     {resource === 'volunteer-requests' && <th>Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {rows.map((r, i) => (
                     <tr key={i}>
-                      {Object.keys(rows[0]).map(col => <td key={col}>{String(r[col] ?? '')}</td>)}
+                      {resource === 'schedules'
+                        ? ['student_id', 'student_name', 'time', 'period', 'teacher', 'room', 'class_name'].map((col) => <td key={col}>{String(r[col] ?? '')}</td>)
+                        : Object.keys(rows[0]).map(col => <td key={col}>{String(r[col] ?? '')}</td>)}
                       {resource === 'volunteer-requests' && (
                         <td>
                           {r.status === 'pending' ? (

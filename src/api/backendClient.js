@@ -43,6 +43,13 @@ export default {
       body: JSON.stringify({ fileBuffer, fileName })
     })
   },
+  uploadScheduleFile: async (fileBuffer, fileName) => {
+    return request('/schedule/import-file', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fileBuffer, fileName })
+    })
+  },
   create: async (resource, body = {}, options = {}) => {
     return request(`/${resource}`, {
       method: 'POST',
