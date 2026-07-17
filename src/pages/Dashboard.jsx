@@ -28,21 +28,14 @@ const RESOURCES = [
     { key: 'event_id', label: 'Event ID' },
   ]},
   { id: 'messages', label: 'Messages', icon: MessageSquare, fields: [
-    { key: 'id', label: 'ID' },
-    { key: 'sender_id', label: 'Sender ID' },
-    { key: 'receiver_id', label: 'Receiver ID' },
+    { key: 'sender_name', label: 'Sender Name' },
+    { key: 'receiver_name', label: 'Receiver Name' },
     { key: 'message', label: 'Message' },
   ]},
   { id: 'schedules', label: 'Schedules', icon: CalendarDays, fields: [
     { key: 'id', label: 'ID' },
     { key: 'name', label: 'Name' },
     { key: 'description', label: 'Description' },
-  ]},
-  { id: 'student_classes', label: 'Student Classes', icon: GraduationCap, fields: [
-    { key: 'id', label: 'ID' },
-    { key: 'grade_level', label: 'Grade Level' },
-    { key: 'user_iduser', label: 'User ID' },
-    { key: 'class_idclass', label: 'Class ID' },
   ]},
   { id: 'clubs', label: 'Clubs', icon: Building2, fields: [
     { key: 'id', label: 'ID' },
@@ -79,8 +72,10 @@ function ResourcePanel({ resource, resourceMeta }) {
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
   const [announcementForm, setAnnouncementForm] = useState({ name: '', description: '' })
+  const [messageForm, setMessageForm] = useState({ receiver_id: '', message: '' })
   const [scheduleUploadMessage, setScheduleUploadMessage] = useState('')
   const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
+  const [showMessageForm, setShowMessageForm] = useState(false)
   const [adminAction, setAdminAction] = useState(() => {
     if (typeof window === 'undefined') return 'classes'
     return window.localStorage.getItem('planner-admin-action') || 'classes'
@@ -139,17 +134,39 @@ function ResourcePanel({ resource, resourceMeta }) {
   const userOptions = useMemo(() => getRows(userOptionsData), [userOptionsData])
   const userSchedules = useMemo(() => getRows(userSchedulesData), [userSchedulesData])
   const visibleRows = useMemo(() => {
-    if (resource !== 'events') return rows
+    if (resource === 'events') {
+      return [...rows].sort((left, right) => {
+        const leftId = Number(left?.id)
+        const rightId = Number(right?.id)
+        if (!Number.isNaN(leftId) && !Number.isNaN(rightId)) {
+          return rightId - leftId
+        }
+        return String(right?.name || '').localeCompare(String(left?.name || ''))
+      })
+    }
 
-    return [...rows].sort((left, right) => {
-      const leftId = Number(left?.id)
-      const rightId = Number(right?.id)
-      if (!Number.isNaN(leftId) && !Number.isNaN(rightId)) {
-        return rightId - leftId
-      }
-      return String(right?.name || '').localeCompare(String(left?.name || ''))
-    })
-  }, [resource, rows])
+    if (resource === 'messages') {
+      const nameFilters = Object.entries(filters || {}).filter(([, value]) => value !== undefined && value !== null && value !== '')
+      if (!nameFilters.length) return rows
+
+      return rows.filter((row) => {
+        const senderName = `${userOptions.find((user) => String(user.id) === String(row.sender_id))?.first_name || ''} ${userOptions.find((user) => String(user.id) === String(row.sender_id))?.last_name || ''}`.trim().toLowerCase()
+        const receiverName = `${userOptions.find((user) => String(user.id) === String(row.receiver_id))?.first_name || ''} ${userOptions.find((user) => String(user.id) === String(row.receiver_id))?.last_name || ''}`.trim().toLowerCase()
+        const messageText = String(row.message || '').toLowerCase()
+
+        return nameFilters.every(([key, value]) => {
+          const normalizedValue = String(value).trim().toLowerCase()
+          if (!normalizedValue) return true
+          if (key === 'sender_name') return senderName.includes(normalizedValue)
+          if (key === 'receiver_name') return receiverName.includes(normalizedValue)
+          if (key === 'message') return messageText.includes(normalizedValue)
+          return true
+        })
+      })
+    }
+
+    return rows
+  }, [resource, rows, filters, userOptions])
   const roleOptions = useMemo(() => getRows(roleOptionsData), [roleOptionsData])
 
   const teacherOptions = useMemo(() => {
@@ -414,6 +431,34 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
+  const handleCreateMessage = async (event) => {
+    event.preventDefault()
+    if (!isAdmin) {
+      setActionMessage('Only admin users can create messages.')
+      return
+    }
+
+    const loggedInUserId = typeof window !== 'undefined' ? window.localStorage.getItem('planner-current-user-id') : ''
+    if (!loggedInUserId) {
+      setActionMessage('No logged-in user is available to send the message.')
+      return
+    }
+
+    try {
+      await backend.create('messages', {
+        sender_id: Number(loggedInUserId),
+        receiver_id: Number(messageForm.receiver_id),
+        message: messageForm.message.trim()
+      })
+      setActionMessage('Message created successfully.')
+      setMessageForm({ receiver_id: '', message: '' })
+      setShowMessageForm(false)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
+
   const handleScheduleUpload = async (event, userId, userType) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -517,6 +562,50 @@ function ResourcePanel({ resource, resourceMeta }) {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Publish</button>
+              </div>
+            </form>
+          )}
+        </div>
+      )}
+
+      {resource === 'messages' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Messages</h3>
+              <p className="mt-1 text-sm text-slate-500">Create new messages and keep conversations organized for the admin team.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowMessageForm((prev) => !prev)}
+              className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
+              disabled={!isAdmin}
+            >
+              {showMessageForm ? 'Cancel' : 'Create message'}
+            </button>
+          </div>
+
+          {showMessageForm && (
+            <form onSubmit={handleCreateMessage} className="mt-4 rounded-xl border border-slate-200 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Receiver</span>
+                  <select value={messageForm.receiver_id} onChange={(event) => setMessageForm((prev) => ({ ...prev, receiver_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
+                    <option value="">Select receiver</option>
+                    {userOptions.map((user) => (
+                      <option key={user.id} value={user.id}>
+                        {`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
+                  <span className="font-medium">Message</span>
+                  <textarea value={messageForm.message} onChange={(event) => setMessageForm((prev) => ({ ...prev, message: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the message" required />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Send message</button>
               </div>
             </form>
           )}
@@ -777,7 +866,7 @@ function ResourcePanel({ resource, resourceMeta }) {
                     </>
                   ) : (
                     Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
-                      <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col}</th>
+                      <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col === 'sender_id' ? 'Sender' : col === 'receiver_id' ? 'Receiver' : col}</th>
                     ))
                   )}
                 </tr>
@@ -818,11 +907,23 @@ function ResourcePanel({ resource, resourceMeta }) {
                         </td>
                       </>
                     ) : (
-                      Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
-                        <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                          {String(row[col] ?? '')}
-                        </td>
-                      ))
+                      Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => {
+                        if (resource === 'messages' && (col === 'sender_id' || col === 'receiver_id')) {
+                          const user = userOptions.find((entry) => String(entry.id) === String(row[col]))
+                          const label = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email_address || `User ${row[col]}`
+                          return (
+                            <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                              {label}
+                            </td>
+                          )
+                        }
+
+                        return (
+                          <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                            {String(row[col] ?? '')}
+                          </td>
+                        )
+                      })
                     )}
                   </tr>
                 ))}
