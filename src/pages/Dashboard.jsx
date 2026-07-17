@@ -490,26 +490,40 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedStudentIds(values)
   }
 
-  const handleAssignRole = async (roleName) => {
+  const handleAssignRole = async (roleId) => {
     if (!currentUserId) {
       setActionMessage('Select a user before assigning a role.')
       return
     }
 
     const targetUser = userOptions.find((user) => String(user.id) === String(currentUserId))
+    const selectedRole = roleOptions.find((role) => String(role.id) === String(roleId))
+
+    if (!selectedRole) {
+      setActionMessage('Select a valid role.')
+      return
+    }
+
     try {
-      await backend.update('users', currentUserId, { role_name: roleName }, { userRole: 'Admin' })
-      setActionMessage(`Assigned ${roleName} role to ${targetUser ? `${targetUser.first_name} ${targetUser.last_name}` : 'the selected user'}.`)
+      await backend.update('users', currentUserId, { role_id: Number(roleId) }, { userRole: 'Admin' })
+      setActionMessage(`Assigned ${selectedRole.name} role to ${targetUser ? `${targetUser.first_name} ${targetUser.last_name}` : 'the selected user'}.`)
       await Promise.all([refetchUsers(), refetchRoles(), refetch()])
     } catch (submissionError) {
       setActionMessage(submissionError.message)
     }
   }
 
-  const handleChangeUserRole = async (user, roleName) => {
+  const handleChangeUserRole = async (user, roleId) => {
+    const selectedRole = roleOptions.find((role) => String(role.id) === String(roleId))
+
+    if (!selectedRole) {
+      setActionMessage('Select a valid role.')
+      return
+    }
+
     try {
-      await backend.update('users', user.id, { role_name: roleName }, { userRole: 'Admin' })
-      setActionMessage(`Updated ${user.first_name || 'User'}'s role to ${roleName}.`)
+      await backend.update('users', user.id, { role_id: Number(roleId) }, { userRole: 'Admin' })
+      setActionMessage(`Updated ${user.first_name || 'User'}'s role to ${selectedRole.name}.`)
       await Promise.all([refetchUsers(), refetchRoles(), refetch()])
     } catch (submissionError) {
       setActionMessage(submissionError.message)
@@ -884,12 +898,13 @@ function ResourcePanel({ resource, resourceMeta }) {
                         <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.email_address ?? ''}</td>
                         <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
                           <select
-                            value={row.role_name || row.role_id || ''}
+                            value={row.role_id ? String(row.role_id) : ''}
                             onChange={(event) => handleChangeUserRole(row, event.target.value)}
                             className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-teal-500"
                           >
+                            <option value="">Select role</option>
                             {roleOptions.map((role) => (
-                              <option key={role.id} value={role.name}>
+                              <option key={role.id} value={String(role.id)}>
                                 {role.name}
                               </option>
                             ))}

@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_BACKEND_BASE || 'http://localhost:3000';
+const BASE = (import.meta.env.VITE_BACKEND_BASE || '').replace(/\/$/, '');
 
 function buildQuery(params = {}) {
   const qs = new URLSearchParams();
@@ -16,7 +16,7 @@ async function request(path, opts = {}) {
   const role = opts.userRole || (typeof window !== 'undefined' ? window.localStorage.getItem('planner-role') : null);
   if (role && !headers['x-user-role']) headers['x-user-role'] = role;
 
-  const res = await fetch(BASE + path, { ...opts, headers });
+  const res = await fetch(`${BASE}${path}`, { ...opts, headers });
   if (!res.ok) {
     const text = await res.text();
     const body = text ? `: ${text}` : '';
