@@ -1,28 +1,41 @@
-import React from 'react';
-import { Users } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 
-export default function MyClassesTab({ classes, studentClasses }) {
+export default function MyClassesTab() {
+  const [classes, setClasses] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Query classes filtered by the teacher ID just like the dashboard expects
+    fetch('/classes?teacher_id=2')
+      .then(res => res.json())
+      .then(data => {
+        const classList = data.mysqlResult || data.data || data;
+        setClasses(Array.isArray(classList) ? classList : []);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Error fetching classes:', err);
+        setLoading(false);
+      });
+  }, []);
+
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {classes.map(cls => (
-        <div key={cls.id} className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="font-semibold text-slate-800">{cls.name}</h3>
-          <p className="text-sm text-slate-500">Room {cls.room_id} | Grade {cls.grade_level}</p>
-          
-          <div className="mt-4 pt-4 border-t border-slate-100">
-            <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Enrolled Students</h4>
-            <div className="max-h-40 overflow-y-auto space-y-1">
-              {studentClasses
-                .filter(sc => sc.class_idclass === cls.id)
-                .map(sc => (
-                  <div key={sc.id} className="text-sm text-slate-600 flex items-center gap-2">
-                    <Users className="h-3 w-3" /> Student ID: {sc.user_iduser}
-                  </div>
-                ))}
+    <div className="bg-white p-6 border border-slate-200 rounded-lg shadow-sm">
+      <h3 className="font-semibold text-lg mb-4 text-slate-800">My Classes</h3>
+      {loading ? (
+        <p className="text-slate-500 text-sm">Loading classes...</p>
+      ) : classes.length === 0 ? (
+        <p className="text-slate-500 italic text-sm">No classes assigned yet.</p>
+      ) : (
+        <div className="grid gap-4">
+          {classes.map(cls => (
+            <div key={cls.id} className="p-4 border border-slate-100 rounded-md bg-slate-50/50">
+              <h4 className="font-medium text-slate-900">{cls.name}</h4>
+              <p className="text-sm text-slate-500 mt-1">Grade Level: {cls.grade_level}</p>
             </div>
-          </div>
+          ))}
         </div>
-      ))}
+      )}
     </div>
   );
 }

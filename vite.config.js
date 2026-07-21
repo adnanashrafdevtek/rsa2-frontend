@@ -31,7 +31,12 @@ export default defineConfig({
       '/event': 'http://localhost:3000',
       '/club_has_event': 'http://localhost:3000',
       '/user_schedules': 'http://localhost:3000',
-      '/user/import-file': 'http://localhost:3000'
+      '/user/import-file': 'http://localhost:3000',
+      '/volunteers': 'http://localhost:3000',
+      '/reviews': 'http://localhost:3000',
+      '/review': 'http://localhost:3000',
+      '/announcements': 'http://localhost:3000',
+      '/announcement': 'http://localhost:3000'
     },
   }
 })
