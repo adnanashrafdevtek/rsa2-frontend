@@ -9,6 +9,7 @@ import Dashboard from './pages/Dashboard';
 import TeacherDashboard from './pages/TeacherDashboard';
 import ExcelUploadPage from './pages/ExcelUploadPage';
 import ProfilePage from './pages/ProfilePage';
+import Annoucements from './pages/Annoucements';
 
 const App = () => {
   const [user, setUser] = useState(() => {
@@ -44,7 +45,8 @@ const App = () => {
               <Route path="/classes" element={<Dashboard initialResource="classes" />} />
               <Route path="/rooms" element={<Dashboard initialResource="rooms" />} />
               <Route path="/schedules" element={<Dashboard initialResource="schedules" />} />
-              <Route path="/events" element={<Dashboard initialResource="events" />} />
+              <Route path="/events" element={<Annoucements />} />
+              <Route path="/announcements" element={<Annoucements />} />
               <Route path="/profile" element={<ProfilePage />} />
               <Route path="/admin/upload-excel" element={<ExcelUploadPage />} />
               <Route path="*" element={<Navigate to="/" replace />} />

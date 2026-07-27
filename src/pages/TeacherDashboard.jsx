@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { CalendarDays, BookOpen, Users, ClipboardCheck, HelpCircle, Users2, Star, Bell } from 'lucide-react'
+import { CalendarDays, BookOpen, Users, ClipboardCheck, Users2, Star, Bell } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
@@ -9,7 +9,6 @@ import StatsCard from '../components/StatsCard'
 import AttendanceTab from '../components/AttendanceTab'
 import MyClassesTab from '../components/MyClassesTab'
 import StudentsTab from '../components/StudentsTab'
-import RequestHelpTab from '../components/RequestHelpTab'
 import VolunteersTab from '../components/VolunteersTab'
 import ReviewsTab from '../components/ReviewsTab'
 import AnnouncementsTab from '../components/AnnouncementsTab'
@@ -81,7 +80,6 @@ export default function TeacherDashboard() {
               <TabsTrigger value="attendance" className="gap-2"><ClipboardCheck className="h-4 w-4" />Attendance</TabsTrigger>
               <TabsTrigger value="classes" className="gap-2"><BookOpen className="h-4 w-4" />My Classes</TabsTrigger>
               <TabsTrigger value="students" className="gap-2"><Users className="h-4 w-4" />Students</TabsTrigger>
-              <TabsTrigger value="help" className="gap-2"><HelpCircle className="h-4 w-4" />Request Help</TabsTrigger>
               <TabsTrigger value="volunteers" className="gap-2"><Users2 className="h-4 w-4" />Volunteers</TabsTrigger>
               <TabsTrigger value="reviews" className="gap-2"><Star className="h-4 w-4" />Reviews</TabsTrigger>
               <TabsTrigger value="announcements" className="gap-2"><Bell className="h-4 w-4" />Announcements</TabsTrigger>
@@ -94,7 +92,6 @@ export default function TeacherDashboard() {
             <TabsContent value="students">
                 <StudentsTab />
             </TabsContent>
-            <TabsContent value="help"><RequestHelpTab teacherId={teacherId} /></TabsContent>
             <TabsContent value="volunteers"><VolunteersTab /></TabsContent>
             <TabsContent value="reviews"><ReviewsTab /></TabsContent>
             <TabsContent value="announcements"><AnnouncementsTab announcements={events} /></TabsContent>
