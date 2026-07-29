@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
-import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, GraduationCap, Upload, ShieldCheck, Settings2, LogOut, HeartHandshake } from "lucide-react"
+import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, GraduationCap, Upload, ShieldCheck, Settings2, LogOut } from "lucide-react"
 
 function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAdmin }) {
   const handleAdminAction = (nextAction) => {
     setAdminMode('Admin')
     setAdminAction(nextAction)
     if (typeof window !== 'undefined') {
-      window.location.href = '/classes'
+      const targetPath = nextAction === 'rooms' ? '/rooms' : '/classes'
+      window.location.href = targetPath
     }
   }
 
@@ -16,7 +17,7 @@ function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAd
         <ShieldCheck className="h-4 w-4 text-teal-600" />
         Admin management
       </div>
-      <p className="mt-1 text-xs text-slate-500">Switch modes and jump to class tools from here.</p>
+      <p className="mt-1 text-xs text-slate-500">Switch modes and jump to class or room tools from here.</p>
 
       <div className="mt-3 flex gap-2">
         <button
@@ -45,6 +46,14 @@ function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAd
             <span>Manage classes</span>
             <Settings2 className="h-3.5 w-3.5" />
           </button>
+          <button
+            type="button"
+            onClick={() => handleAdminAction('rooms')}
+            className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${adminAction === 'rooms' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
+          >
+            <span>Manage rooms</span>
+            <Settings2 className="h-3.5 w-3.5" />
+          </button>
         </div>
       )}
     </div>
@@ -70,36 +79,20 @@ export default function Layout({ children }) {
     }
   }, [adminMode, adminAction])
 
-<<<<<<< HEAD
   const nav = [
     { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/" },
     { label: "Teacher Dashboard", icon: BookOpen, id: "teacher-dashboard", href: "/teacher-dashboard" },
-    { label: "Import Users", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
+    { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
     { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/schedules" },
     { label: "Announcements", icon: Bell, id: "announcements", href: "/events" },
     { label: "Profile", icon: User, id: "profile", href: "/profile" },
-=======
-  const isAdmin = adminMode === 'Admin'
-
-  const roleId = typeof window !== 'undefined' 
-    ? Number(window.localStorage.getItem('planner-current-role-id')) || (isAdmin ? 3 : 2)
-    : 2
-
-  const allNavItems = [
-    { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/", show: isAdmin || roleId === 3 },
-    { label: "Teacher Dashboard", icon: BookOpen, id: "teacher-dashboard", href: "/teacher-dashboard", show: !isAdmin && roleId === 2 },
-    { label: "Volunteers", icon: HeartHandshake, id: "volunteers", href: "/volunteers", show: isAdmin || roleId === 3 || roleId === 2 },
-    { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel", show: isAdmin || roleId === 3 },
-    { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/schedules", show: true },
-    { label: "Announcements", icon: Bell, id: "announcements", href: "/events", show: true },
-    { label: "Profile", icon: User, id: "profile", href: "/profile", show: true },
->>>>>>> dd9fab8dbc10631a34f4b6a0db8646e02ecd901a
   ]
 
-  const nav = allNavItems.filter(item => item.show)
+  const isAdmin = adminMode === 'Admin'
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-slate-50">
+      {/* Desktop Sidebar */}
       <aside className="hidden lg:flex lg:flex-col w-64 bg-white border-r border-slate-200">
         <div className="p-6 border-b border-slate-100">
           <div className="flex items-center gap-3">
@@ -108,9 +101,7 @@ export default function Layout({ children }) {
             </div>
             <div>
               <h1 className="font-bold text-slate-800 text-lg leading-tight">Frontend</h1>
-              <p className="text-[10px] font-medium text-teal-600 uppercase tracking-wider">
-                {isAdmin ? 'ADMIN' : 'TEACHER'}
-              </p>
+              <p className="text-[10px] font-medium text-teal-600 uppercase tracking-wider">ADMIN</p>
             </div>
           </div>
         </div>
@@ -127,7 +118,7 @@ export default function Layout({ children }) {
                   <Icon className="w-4.5 h-4.5 text-slate-400" />
                   {item.label}
                 </a>
-                {item.id === 'profile' && isAdmin && (
+                {item.id === 'profile' && (
                   <div className="mt-4 px-1">
                     <AdminPanel
                       adminMode={adminMode}
@@ -143,10 +134,13 @@ export default function Layout({ children }) {
           })}
         </nav>
 
+        {/* Logout Section */}
         <div className="p-4 border-t border-slate-100">
           <button
             onClick={() => {
-              window.localStorage.clear();
+              window.localStorage.removeItem('user');
+              window.localStorage.removeItem('planner-role');
+              window.localStorage.removeItem('planner-admin-action');
               window.location.href = '/login';
             }}
             className="flex w-full items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium text-red-600 hover:bg-red-50 hover:text-red-700 transition-all"
@@ -172,17 +166,15 @@ export default function Layout({ children }) {
 
         {mobileOpen && (
           <nav className="lg:hidden bg-white border-b border-slate-200 p-3 space-y-1">
-            {isAdmin && (
-              <div className="mb-3">
-                <AdminPanel
-                  adminMode={adminMode}
-                  setAdminMode={setAdminMode}
-                  adminAction={adminAction}
-                  setAdminAction={setAdminAction}
-                  isAdmin={isAdmin}
-                />
-              </div>
-            )}
+            <div className="mb-3">
+              <AdminPanel
+                adminMode={adminMode}
+                setAdminMode={setAdminMode}
+                adminAction={adminAction}
+                setAdminAction={setAdminAction}
+                isAdmin={isAdmin}
+              />
+            </div>
             {nav.map(item => {
               const Icon = item.icon
               return (
@@ -192,7 +184,7 @@ export default function Layout({ children }) {
                   className="flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-600 hover:bg-slate-50"
                   onClick={() => setMobileOpen(false)}
                 >
-                  <Icon className="w-4 h-4 text-slate-400" />
+                  <Icon className="w-4 h-4 text-slatee-400" />
                   {item.label}
                 </a>
               )
