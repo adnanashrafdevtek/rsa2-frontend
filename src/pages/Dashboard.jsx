@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload } from 'lucide-react'
+import { Users, GraduationCap, Bell, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload } from 'lucide-react'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -19,19 +19,18 @@ const RESOURCES = [
   { id: 'classes', label: 'Classes', icon: BookOpen, fields: [
     { key: 'name', label: 'Class Name' },
     { key: 'teacher_id', label: 'Teacher Name' },
-    { key: 'room_id', label: 'Room Name' },
+    { key: 'room', label: 'Room' },
+    { key: 'period', label: 'Period' },
+    { key: 'time', label: 'Time' },
     { key: 'grade_level', label: 'Grade Level' },
   ]},
-  { id: 'rooms', label: 'Rooms', icon: MapPin, fields: [
-    { key: 'name', label: 'Room' },
-  ]},
-  { id: 'messages', label: 'Messages', icon: MessageSquare, fields: [
-    { key: 'sender_name', label: 'Sender Name' },
-    { key: 'receiver_name', label: 'Receiver Name' },
-    { key: 'message', label: 'Message' },
+  { id: 'announcements', label: 'Announcements', icon: Bell, fields: [
+    { key: 'title', label: 'Title' },
+    { key: 'content', label: 'Content' },
+    { key: 'created_by', label: 'Created By' },
+    { key: 'created_at', label: 'Time' },
   ]},
   { id: 'schedules', label: 'Schedules', icon: CalendarDays, fields: [
-    { key: 'student_id', label: 'Student ID' },
     { key: 'student_name', label: 'Student Name' },
     { key: 'time', label: 'Time' },
     { key: 'period', label: 'Period' },
@@ -51,6 +50,9 @@ const RESOURCES = [
   ]},
 ]
 
+const CLASS_DAY_OPTIONS = ['A-day', 'B-day']
+const CLASS_TIME_OPTIONS = ['7:50-8:10', '8:15-8:55', '8:55-9:40', '9:40-10:25', '10:25-11:15', '11:15-11:55', '11:55-12:15', '12:15-1:00', '1:00-2:00', '2:00-2:10', '2:10-2:50', '2:50-3:25']
+
 function formatEventDateTime(value) {
   if (!value) return ''
   const normalized = String(value).replace(' ', 'T')
@@ -64,6 +66,11 @@ function formatEventDateTime(value) {
   const minutes = String(parsed.getMinutes()).padStart(2, '0')
 
   return `${year}-${month}-${day} ${hours}:${minutes}`
+}
+
+function formatUserName(user) {
+  if (!user) return ''
+  return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`
 }
 
 function normalizeEventDateTime(value) {
@@ -87,22 +94,20 @@ function ResourcePanel({ resource, resourceMeta }) {
     if (typeof window === 'undefined') return 'Teacher'
     return window.localStorage.getItem('planner-role') || 'Teacher'
   })
-  const [classForm, setClassForm] = useState({ name: '', teacher_id: '', room_id: '', grade_level: '' })
-  const [roomForm, setRoomForm] = useState({ name: '', class_id: '', period: '' })
+  const [classForm, setClassForm] = useState({ name: '', teacher_id: '', room: '', period: '', time: '', grade_level: '' })
   const [editingClassId, setEditingClassId] = useState(null)
   const [showClassForm, setShowClassForm] = useState(false)
-  const [editingRoomId, setEditingRoomId] = useState(null)
-  const [showRoomForm, setShowRoomForm] = useState(false)
   const [selectedStudentIds, setSelectedStudentIds] = useState([])
   const [actionMessage, setActionMessage] = useState('')
   const [eventForm, setEventForm] = useState({ name: '', description: '', room: '', date: '' })
-  const [messageForm, setMessageForm] = useState({ receiver_id: '', message: '' })
+  const [announcementForm, setAnnouncementForm] = useState({ title: '', content: '' })
+  const [announcementRecipientIds, setAnnouncementRecipientIds] = useState([])
+  const [selectAllTeachers, setSelectAllTeachers] = useState(false)
   const [scheduleUploadMessage, setScheduleUploadMessage] = useState('')
   const [scheduleImportMessage, setScheduleImportMessage] = useState('')
-  const [selectedTeacherScheduleId, setSelectedTeacherScheduleId] = useState('')
   const [selectedStudentScheduleId, setSelectedStudentScheduleId] = useState('')
   const [showEventForm, setShowEventForm] = useState(false)
-  const [showMessageForm, setShowMessageForm] = useState(false)
+  const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
   const [adminAction, setAdminAction] = useState(() => {
     if (typeof window === 'undefined') return 'classes'
     return window.localStorage.getItem('planner-admin-action') || 'classes'
@@ -123,7 +128,6 @@ function ResourcePanel({ resource, resourceMeta }) {
   const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 1 }), { staleTime: 1000 * 30 })
   const { data: studentOptionsData } = useQuery(['backend', 'students'], () => backend.list('users', { role_id: 3 }), { staleTime: 1000 * 30 })
   const { data: userSchedulesData, refetch: refetchSchedules } = useQuery(['backend', 'user-schedules'], () => backend.list('user_schedules'), { staleTime: 1000 * 30 })
-  const { data: roomOptionsData } = useQuery(['backend', 'room-options'], () => backend.list('rooms'), { staleTime: 1000 * 30 })
   const { data: classOptionsData } = useQuery(['backend', 'class-options'], () => backend.list('classes'), { staleTime: 1000 * 30 })
   const { data: eventOptionsData } = useQuery(['backend', 'event-options'], () => backend.list('events'), { staleTime: 1000 * 30 })
 
@@ -134,14 +138,14 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedStudentIds([])
     setEditingClassId(null)
     setShowClassForm(false)
-    setEditingRoomId(null)
-    setShowRoomForm(false)
     setScheduleImportMessage('')
-    setSelectedTeacherScheduleId('')
     setSelectedStudentScheduleId('')
+    setAnnouncementForm({ title: '', content: '' })
+    setAnnouncementRecipientIds([])
+    setSelectAllTeachers(false)
     setEventForm({ name: '', description: '', room: '', date: '' })
     setShowEventForm(false)
-    setAdminAction(resource === 'classes' ? 'classes' : resource === 'rooms' ? 'rooms' : null)
+    setAdminAction(resource === 'classes' ? 'classes' : null)
   }, [resource])
 
   useEffect(() => {
@@ -159,7 +163,7 @@ function ResourcePanel({ resource, resourceMeta }) {
       const storedMode = window.localStorage.getItem('planner-role') || 'Teacher'
       const storedAction = window.localStorage.getItem('planner-admin-action') || 'classes'
       setAdminMode(storedMode)
-      setAdminAction(storedAction)
+      setAdminAction(storedAction === 'classes' ? 'classes' : null)
     }
 
     syncAdminState()
@@ -194,26 +198,6 @@ function ResourcePanel({ resource, resourceMeta }) {
         })
     }
 
-    if (resource === 'messages') {
-      const nameFilters = Object.entries(filters || {}).filter(([, value]) => value !== undefined && value !== null && value !== '')
-      if (!nameFilters.length) return rows
-
-      return rows.filter((row) => {
-        const senderName = `${userOptions.find((user) => String(user.id) === String(row.sender_id))?.first_name || ''} ${userOptions.find((user) => String(user.id) === String(row.sender_id))?.last_name || ''}`.trim().toLowerCase()
-        const receiverName = `${userOptions.find((user) => String(user.id) === String(row.receiver_id))?.first_name || ''} ${userOptions.find((user) => String(user.id) === String(row.receiver_id))?.last_name || ''}`.trim().toLowerCase()
-        const messageText = String(row.message || '').toLowerCase()
-
-        return nameFilters.every(([key, value]) => {
-          const normalizedValue = String(value).trim().toLowerCase()
-          if (!normalizedValue) return true
-          if (key === 'sender_name') return senderName.includes(normalizedValue)
-          if (key === 'receiver_name') return receiverName.includes(normalizedValue)
-          if (key === 'message') return messageText.includes(normalizedValue)
-          return true
-        })
-      })
-    }
-
     return rows
   }, [resource, rows, filters, userOptions])
   const roleOptions = useMemo(() => getRows(roleOptionsData), [roleOptionsData])
@@ -227,11 +211,6 @@ function ResourcePanel({ resource, resourceMeta }) {
     if (Array.isArray(studentOptionsData)) return studentOptionsData
     return (studentOptionsData && studentOptionsData.mysqlResult) || []
   }, [studentOptionsData])
-
-  const roomOptions = useMemo(() => {
-    if (Array.isArray(roomOptionsData)) return roomOptionsData
-    return (roomOptionsData && roomOptionsData.mysqlResult) || []
-  }, [roomOptionsData])
 
   const scheduleLookup = useMemo(() => {
     return new Map(userSchedules.map((entry) => [`${entry.user_type}:${entry.user_id}`, entry]))
@@ -285,30 +264,6 @@ function ResourcePanel({ resource, resourceMeta }) {
     return (eventOptionsData && eventOptionsData.mysqlResult) || []
   }, [eventOptionsData])
 
-  const roomScheduleCards = useMemo(() => {
-    if (!Array.isArray(rows)) return []
-
-    if (resource === 'rooms') {
-      return rows.map((row) => ({
-        key: `room-${row.id}`,
-        title: row.name,
-        className: classOptions.find((entry) => entry.id === row.class_id)?.name || 'Unassigned',
-        period: row.period || 'Not set'
-      }))
-    }
-
-    if (resource === 'classes') {
-      return rows.map((row) => ({
-        key: `class-${row.id}`,
-        title: row.name,
-        className: row.name,
-        period: roomOptions.find((entry) => entry.id === row.room_id)?.period || 'Not set'
-      }))
-    }
-
-    return []
-  }, [rows, resource, classOptions, roomOptions])
-
   const handleSubmit = (event) => {
     event.preventDefault()
     const nextFilters = {}
@@ -331,7 +286,7 @@ function ResourcePanel({ resource, resourceMeta }) {
   const isAdmin = adminMode === 'Admin'
 
   const resetClassForm = () => {
-    setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
+    setClassForm({ name: '', teacher_id: '', room: '', period: '', time: '', grade_level: '' })
     setSelectedStudentIds([])
     setEditingClassId(null)
     setShowClassForm(false)
@@ -339,23 +294,10 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const openCreateClassForm = () => {
     setEditingClassId(null)
-    setClassForm({ name: '', teacher_id: '', room_id: '', grade_level: '' })
+    setClassForm({ name: '', teacher_id: '', room: '', period: '', time: '', grade_level: '' })
     setSelectedStudentIds([])
     setShowClassForm(true)
     setAdminAction('classes')
-  }
-
-  const resetRoomForm = () => {
-    setRoomForm({ name: '', class_id: '', period: '' })
-    setEditingRoomId(null)
-    setShowRoomForm(false)
-  }
-
-  const openCreateRoomForm = () => {
-    setEditingRoomId(null)
-    setRoomForm({ name: '', class_id: '', period: '' })
-    setShowRoomForm(true)
-    setAdminAction('rooms')
   }
 
   const handleCreateOrUpdateClass = async (event) => {
@@ -369,7 +311,9 @@ function ResourcePanel({ resource, resourceMeta }) {
       const payload = {
         name: classForm.name.trim(),
         teacher_id: Number(classForm.teacher_id),
-        room_id: Number(classForm.room_id),
+        room: classForm.room.trim(),
+        period: classForm.period.trim(),
+        time: classForm.time.trim(),
         student_ids: selectedStudentIds.map((value) => Number(value)).filter(Boolean),
         grade_level: classForm.grade_level.trim() || null
       }
@@ -389,81 +333,19 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
-  const handleCreateOrUpdateRoom = async (event) => {
-    event.preventDefault()
-    if (!isAdmin) {
-      setActionMessage('Only admin users can manage rooms.')
-      return
-    }
-
-    try {
-      const payload = {
-        name: roomForm.name.trim(),
-        class_id: roomForm.class_id ? Number(roomForm.class_id) : null,
-        period: roomForm.period.trim()
-      }
-
-      if (editingRoomId) {
-        await backend.update('rooms', editingRoomId, payload)
-        setActionMessage('Room updated successfully.')
-      } else {
-        await backend.create('rooms', payload)
-        setActionMessage('Room created successfully.')
-      }
-
-      resetRoomForm()
-      await refetch()
-    } catch (submissionError) {
-      setActionMessage(submissionError.message)
-    }
-  }
-
   const handleEditClass = (classItem) => {
     setEditingClassId(classItem.id)
     setClassForm({
       name: classItem.name || '',
       teacher_id: classItem.teacher_id || '',
-      room_id: classItem.room_id || '',
+      room: classItem.room || '',
+      period: classItem.period || '',
+      time: classItem.time || '',
       grade_level: classItem.grade_level || ''
     })
     setSelectedStudentIds([])
     setShowClassForm(true)
     setAdminAction('classes')
-  }
-
-  const handleDeleteClass = async (classId) => {
-    if (!window.confirm('Delete this class?')) return
-    try {
-      await backend.remove('classes', classId)
-      setActionMessage('Class deleted successfully.')
-      if (selectedRow?.id === classId) setSelectedRow(null)
-      await refetch()
-    } catch (submissionError) {
-      setActionMessage(submissionError.message)
-    }
-  }
-
-  const handleEditRoom = (roomItem) => {
-    setEditingRoomId(roomItem.id)
-    setRoomForm({
-      name: roomItem.name || '',
-      class_id: roomItem.class_id || '',
-      period: roomItem.period || ''
-    })
-    setShowRoomForm(true)
-    setAdminAction('rooms')
-  }
-
-  const handleDeleteRoom = async (roomId) => {
-    if (!window.confirm('Delete this room?')) return
-    try {
-      await backend.remove('rooms', roomId)
-      setActionMessage('Room deleted successfully.')
-      if (selectedRow?.id === roomId) setSelectedRow(null)
-      await refetch()
-    } catch (submissionError) {
-      setActionMessage(submissionError.message)
-    }
   }
 
   const handleCreateEvent = async (event) => {
@@ -489,28 +371,36 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
-  const handleCreateMessage = async (event) => {
+  const handleCreateAnnouncement = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
-      setActionMessage('Only admin users can create messages.')
+      setActionMessage('Only admin users can create announcements.')
       return
     }
 
-    const loggedInUserId = typeof window !== 'undefined' ? window.localStorage.getItem('planner-current-user-id') : ''
-    if (!loggedInUserId) {
-      setActionMessage('No logged-in user is available to send the message.')
+    if (!announcementForm.title.trim() || !announcementForm.content.trim()) {
+      setActionMessage('Title and content are required.')
+      return
+    }
+
+    if (!selectAllTeachers && announcementRecipientIds.length === 0) {
+      setActionMessage('Select at least one teacher or choose Select all teachers.')
       return
     }
 
     try {
-      await backend.create('messages', {
-        sender_id: Number(loggedInUserId),
-        receiver_id: Number(messageForm.receiver_id),
-        message: messageForm.message.trim()
+      await backend.create('announcements', {
+        title: announcementForm.title.trim(),
+        content: announcementForm.content.trim(),
+        created_by: Number(currentUserId || 1),
+        target_all: selectAllTeachers ? 1 : 0,
+        teacher_ids: selectAllTeachers ? [] : announcementRecipientIds.map((id) => Number(id))
       })
-      setActionMessage('Message created successfully.')
-      setMessageForm({ receiver_id: '', message: '' })
-      setShowMessageForm(false)
+      setActionMessage('Announcement created successfully.')
+      setAnnouncementForm({ title: '', content: '' })
+      setAnnouncementRecipientIds([])
+      setSelectAllTeachers(false)
+      setShowAnnouncementForm(false)
       await refetch()
     } catch (submissionError) {
       setActionMessage(submissionError.message)
@@ -680,47 +570,92 @@ function ResourcePanel({ resource, resourceMeta }) {
         </div>
       )}
 
-      {resource === 'messages' && (
+      {resource === 'announcements' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
-              <h3 className="font-semibold text-slate-900">Messages</h3>
-              <p className="mt-1 text-sm text-slate-500">Create new messages and keep conversations organized for the admin team.</p>
+              <h3 className="font-semibold text-slate-900">Announcements</h3>
+              <p className="mt-1 text-sm text-slate-500">Send announcements to selected teachers or to all teachers.</p>
             </div>
             <button
               type="button"
-              onClick={() => setShowMessageForm((prev) => !prev)}
+              onClick={() => setShowAnnouncementForm((prev) => !prev)}
               className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
               disabled={!isAdmin}
             >
-              {showMessageForm ? 'Cancel' : 'Create message'}
+              {showAnnouncementForm ? 'Cancel' : 'Create announcement'}
             </button>
           </div>
 
-          {showMessageForm && (
-            <form onSubmit={handleCreateMessage} className="mt-4 rounded-xl border border-slate-200 p-4">
+          {showAnnouncementForm && (
+            <form onSubmit={handleCreateAnnouncement} className="mt-4 rounded-xl border border-slate-200 p-4">
               <div className="grid gap-3 md:grid-cols-2">
                 <label className="space-y-1 text-sm text-slate-600">
-                  <span className="font-medium">Receiver</span>
-                  <select value={messageForm.receiver_id} onChange={(event) => setMessageForm((prev) => ({ ...prev, receiver_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
-                    <option value="">Select receiver</option>
-                    {userOptions.map((user) => (
-                      <option key={user.id} value={user.id}>
-                        {`${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`}
-                      </option>
-                    ))}
-                  </select>
+                  <span className="font-medium">Title</span>
+                  <input value={announcementForm.title} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, title: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Announcement title" required />
                 </label>
                 <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
-                  <span className="font-medium">Message</span>
-                  <textarea value={messageForm.message} onChange={(event) => setMessageForm((prev) => ({ ...prev, message: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the message" required />
+                  <span className="font-medium">Content</span>
+                  <textarea value={announcementForm.content} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, content: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the announcement" required />
                 </label>
+                <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="font-medium text-slate-700">Recipients</span>
+                    <label className="inline-flex items-center gap-2 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={selectAllTeachers}
+                        onChange={(event) => {
+                          const checked = event.target.checked
+                          setSelectAllTeachers(checked)
+                          setAnnouncementRecipientIds(checked ? teacherOptions.map((teacher) => String(teacher.id)) : [])
+                        }}
+                      />
+                      Select all teachers
+                    </label>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {teacherOptions.map((teacher) => {
+                      const teacherId = String(teacher.id)
+                      const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
+                      const checked = selectAllTeachers || announcementRecipientIds.includes(teacherId)
+
+                      return (
+                        <label key={teacher.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              const isChecked = event.target.checked
+                              setAnnouncementRecipientIds((prev) => {
+                                const next = new Set(prev)
+                                if (isChecked) {
+                                  next.add(teacherId)
+                                } else {
+                                  next.delete(teacherId)
+                                }
+                                const nextList = Array.from(next)
+                                setSelectAllTeachers(teacherOptions.length > 0 && nextList.length === teacherOptions.length)
+                                return nextList
+                              })
+                            }}
+                            disabled={selectAllTeachers}
+                          />
+                          <span>{teacherName}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
-                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Send message</button>
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">Send announcement</button>
               </div>
             </form>
           )}
+          <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-600">
+            Announcements are stored for teacher delivery and shown on the teacher dashboard.
+          </div>
         </div>
       )}
 
@@ -758,61 +693,7 @@ function ResourcePanel({ resource, resourceMeta }) {
             </div>
           )}
 
-          <div className="mt-6 grid gap-6 xl:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="font-semibold text-slate-900">Teachers</h4>
-                  <p className="text-sm text-slate-500">Choose one teacher and upload a CSV for that schedule.</p>
-                </div>
-                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-medium text-slate-600">{teacherOptions.length}</span>
-              </div>
-              <div className="mt-4 rounded-xl border border-slate-200 bg-white p-3">
-                <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
-                  <label className="space-y-1 text-sm text-slate-600">
-                    <span className="font-medium">Teacher name</span>
-                    <select
-                      value={selectedTeacherScheduleId}
-                      onChange={(event) => setSelectedTeacherScheduleId(event.target.value)}
-                      className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    >
-                      <option value="">Select teacher</option>
-                      {teacherOptions.map((teacher) => (
-                        <option key={teacher.id} value={teacher.id}>
-                          {`${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="inline-flex cursor-pointer items-center justify-center rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                    <span>Upload CSV</span>
-                    <input
-                      type="file"
-                      accept=".csv,text/csv"
-                      className="sr-only"
-                      disabled={!selectedTeacherScheduleId}
-                      onChange={(event) => handleScheduleUpload(event, selectedTeacherScheduleId, 'teacher')}
-                    />
-                  </label>
-                </div>
-                {teacherOptions.length === 0 ? (
-                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">No teachers found.</div>
-                ) : selectedTeacherScheduleId ? (() => {
-                  const teacher = teacherOptions.find((entry) => String(entry.id) === String(selectedTeacherScheduleId))
-                  const uploadedSchedule = scheduleLookup.get(`teacher:${selectedTeacherScheduleId}`)
-                  return (
-                    <div className="mt-3 text-sm text-slate-600">
-                      <div className="font-medium text-slate-900">{`${teacher?.first_name || ''} ${teacher?.last_name || ''}`.trim() || teacher?.email_address || `Teacher ${selectedTeacherScheduleId}`}</div>
-                      <div>{teacher?.email_address || 'No email available'}</div>
-                      <div className="mt-1">{uploadedSchedule ? `Uploaded: ${uploadedSchedule.file_name}` : 'No schedule uploaded yet'}</div>
-                    </div>
-                  )
-                })() : (
-                  <div className="rounded-lg border border-dashed border-slate-300 p-3 text-sm text-slate-500">Select a teacher to view the uploaded schedule.</div>
-                )}
-              </div>
-            </div>
-
+          <div className="mt-6 grid gap-6">
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
               <div className="flex items-center justify-between">
                 <div>
@@ -957,16 +838,27 @@ function ResourcePanel({ resource, resourceMeta }) {
                 </label>
                 <label className="space-y-1 text-sm text-slate-600">
                   <span className="font-medium">Room</span>
-                  <select value={classForm.room_id} onChange={(event) => setClassForm((prev) => ({ ...prev, room_id: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm">
-                    <option value="">Select room</option>
-                    {roomOptions.map((room) => (
-                      <option key={room.id} value={room.id}>
-                        {room.name || `Room ${room.id}`}
-                      </option>
+                  <input value={classForm.room} onChange={(event) => setClassForm((prev) => ({ ...prev, room: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. Room 101" required />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">A-day/B-day</span>
+                  <select value={classForm.period} onChange={(event) => setClassForm((prev) => ({ ...prev, period: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
+                    <option value="">Select day</option>
+                    {CLASS_DAY_OPTIONS.map((dayOption) => (
+                      <option key={dayOption} value={dayOption}>{dayOption}</option>
                     ))}
                   </select>
                 </label>
-                <label className="space-y-1 text-sm text-slate-600 md:col-span-3">
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Time</span>
+                  <select value={classForm.time} onChange={(event) => setClassForm((prev) => ({ ...prev, time: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" required>
+                    <option value="">Select time</option>
+                    {CLASS_TIME_OPTIONS.map((time) => (
+                      <option key={time} value={time}>{time}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-2 xl:col-span-3">
                   <span className="font-medium">Grade level</span>
                   <input value={classForm.grade_level} onChange={(event) => setClassForm((prev) => ({ ...prev, grade_level: event.target.value }))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="e.g. 10" />
                 </label>
@@ -989,7 +881,9 @@ function ResourcePanel({ resource, resourceMeta }) {
               const teacherName = teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.first_name || teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.last_name
                 ? `${teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.first_name || ''} ${teacherOptions.find((entry) => String(entry.id) === String(row.teacher_id))?.last_name || ''}`.trim()
                 : row.teacher_id || '—'
-              const roomName = roomOptions.find((entry) => String(entry.id) === String(row.room_id))?.name || row.room_id || '—'
+              const roomName = row.room || '—'
+              const periodName = row.period || '—'
+              const timeName = row.time || '—'
 
               return (
                 <div key={`class-${row.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -998,6 +892,8 @@ function ResourcePanel({ resource, resourceMeta }) {
                       <div className="font-semibold text-slate-900">{row.name || 'Untitled class'}</div>
                       <div className="mt-1 text-sm text-slate-600">Teacher: {teacherName}</div>
                       <div className="text-sm text-slate-600">Room: {roomName}</div>
+                      <div className="text-sm text-slate-600">Period: {periodName}</div>
+                      <div className="text-sm text-slate-600">Time: {timeName}</div>
                       <div className="text-sm text-slate-600">Grade: {row.grade_level || '—'}</div>
                     </div>
                   <div className="flex items-center gap-2">
@@ -1030,118 +926,7 @@ function ResourcePanel({ resource, resourceMeta }) {
         </div>
       )}
 
-      {resource === 'rooms' && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h3 className="font-semibold text-slate-900">Rooms</h3>
-              <p className="mt-1 text-sm text-slate-500">Add rooms, search by room name, and manage the room list.</p>
-            </div>
-            <button type="button" onClick={openCreateRoomForm} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700" disabled={!isAdmin}>
-              <Plus className="h-4 w-4" />
-              Add room
-            </button>
-          </div>
-
-          {actionMessage && (
-            <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
-              {actionMessage}
-            </div>
-          )}
-
-          {showRoomForm && (
-            <form onSubmit={handleCreateOrUpdateRoom} className="mt-4 rounded-xl border border-slate-200 p-4">
-              <div className="grid gap-3 md:grid-cols-3">
-                <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
-                  <span className="font-medium">Room</span>
-                  <input
-                    value={roomForm.name}
-                    onChange={(event) => setRoomForm((prev) => ({ ...prev, name: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="e.g. Room 101"
-                    required
-                  />
-                </label>
-                <label className="space-y-1 text-sm text-slate-600">
-                  <span className="font-medium">Class</span>
-                  <select
-                    value={roomForm.class_id}
-                    onChange={(event) => setRoomForm((prev) => ({ ...prev, class_id: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                  >
-                    <option value="">Select class</option>
-                    {classOptions.map((classItem) => (
-                      <option key={classItem.id} value={classItem.id}>
-                        {classItem.name || `Class ${classItem.id}`}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="space-y-1 text-sm text-slate-600 md:col-span-3">
-                  <span className="font-medium">Period</span>
-                  <input
-                    value={roomForm.period}
-                    onChange={(event) => setRoomForm((prev) => ({ ...prev, period: event.target.value }))}
-                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
-                    placeholder="e.g. Period 2"
-                  />
-                </label>
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
-                  {editingRoomId ? 'Save changes' : 'Create room'}
-                </button>
-                {editingRoomId && (
-                  <button type="button" onClick={resetRoomForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </form>
-          )}
-
-          <div className="mt-6 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {visibleRows.length > 0 ? visibleRows.map((row) => {
-              const linkedClass = classOptions.find((entry) => String(entry.id) === String(row.class_id))
-              return (
-                <div key={`room-${row.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <div className="font-semibold text-slate-900">{row.name || 'Untitled room'}</div>
-                      <div className="mt-1 text-sm text-slate-600">Class: {linkedClass?.name || row.class_id || '—'}</div>
-                      <div className="text-sm text-slate-600">Period: {row.period || '—'}</div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleEditRoom(row)}
-                        className="rounded-lg border border-slate-300 p-2 text-slate-600 transition hover:bg-slate-50"
-                        aria-label={`Edit ${row.name || 'room'}`}
-                        disabled={!isAdmin}
-                      >
-                        <Pencil className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteRoom(row.id)}
-                        className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
-                        aria-label={`Delete ${row.name || 'room'}`}
-                        disabled={!isAdmin}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )
-            }) : (
-              <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 md:col-span-2 xl:col-span-3">No rooms found.</div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {resource !== 'classes' && resource !== 'rooms' && (
+      {resource !== 'classes' && (
         <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-4 py-3">
             <div>
@@ -1164,7 +949,7 @@ function ResourcePanel({ resource, resourceMeta }) {
             <table className="min-w-full text-sm">
               <thead className="bg-slate-50 text-left text-slate-700">
                 <tr>
-                  {resource === 'users' ? (
+                      {resource === 'users' ? (
                     <>
                       <th className="whitespace-nowrap px-3 py-3 font-medium">First Name</th>
                       <th className="whitespace-nowrap px-3 py-3 font-medium">Last Name</th>
@@ -1179,15 +964,19 @@ function ResourcePanel({ resource, resourceMeta }) {
                         <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
                       ))}
                     </>
-                  ) : resource === 'schedules' ? (
+                    ) : resource === 'announcements' ? (
+                      resourceMeta.fields.map((field) => (
+                        <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
+                      ))
+                    ) : resource === 'schedules' ? (
                     resourceMeta.fields.map((field) => (
                       <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
                     ))
                   ) : (
-                    Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
-                      <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col === 'sender_id' ? 'Sender' : col === 'receiver_id' ? 'Receiver' : col}</th>
-                    ))
-                  )}
+                Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
+                  <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col}</th>
+                ))
+                )}
                 </tr>
               </thead>
               <tbody>
@@ -1235,6 +1024,31 @@ function ResourcePanel({ resource, resourceMeta }) {
                           </td>
                         ))}
                       </>
+                    ) : resource === 'announcements' ? (
+                      resourceMeta.fields.map((field) => {
+                        if (field.key === 'created_by') {
+                          const creator = userOptions.find((entry) => String(entry.id) === String(row.created_by))
+                          return (
+                            <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                              {formatUserName(creator)}
+                            </td>
+                          )
+                        }
+
+                        if (field.key === 'created_at') {
+                          return (
+                            <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                              {formatEventDateTime(row.created_at)}
+                            </td>
+                          )
+                        }
+
+                        return (
+                          <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                            {String(row[field.key] ?? '')}
+                          </td>
+                        )
+                      })
                     ) : resource === 'schedules' ? (
                       resourceMeta.fields.map((field) => (
                         <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
@@ -1242,23 +1056,11 @@ function ResourcePanel({ resource, resourceMeta }) {
                         </td>
                       ))
                     ) : (
-                      Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => {
-                        if (resource === 'messages' && (col === 'sender_id' || col === 'receiver_id')) {
-                          const user = userOptions.find((entry) => String(entry.id) === String(row[col]))
-                          const label = `${user?.first_name || ''} ${user?.last_name || ''}`.trim() || user?.email_address || `User ${row[col]}`
-                          return (
-                            <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                              {label}
-                            </td>
-                          )
-                        }
-
-                        return (
-                          <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                            {String(row[col] ?? '')}
-                          </td>
-                        )
-                      })
+                      Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
+                        <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
+                          {String(row[col] ?? '')}
+                        </td>
+                      ))
                     )}
                   </tr>
                 ))}

@@ -6,8 +6,7 @@ function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAd
     setAdminMode('Admin')
     setAdminAction(nextAction)
     if (typeof window !== 'undefined') {
-      const targetPath = nextAction === 'rooms' ? '/rooms' : '/classes'
-      window.location.href = targetPath
+      window.location.href = '/classes'
     }
   }
 
@@ -17,7 +16,7 @@ function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAd
         <ShieldCheck className="h-4 w-4 text-teal-600" />
         Admin management
       </div>
-      <p className="mt-1 text-xs text-slate-500">Switch modes and jump to class or room tools from here.</p>
+      <p className="mt-1 text-xs text-slate-500">Switch modes and jump to class tools from here.</p>
 
       <div className="mt-3 flex gap-2">
         <button
@@ -44,14 +43,6 @@ function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAd
             className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${adminAction === 'classes' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
           >
             <span>Manage classes</span>
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAdminAction('rooms')}
-            className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${adminAction === 'rooms' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
-          >
-            <span>Manage rooms</span>
             <Settings2 className="h-3.5 w-3.5" />
           </button>
         </div>
@@ -82,7 +73,7 @@ export default function Layout({ children }) {
   const nav = [
     { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/" },
     { label: "Teacher Dashboard", icon: BookOpen, id: "teacher-dashboard", href: "/teacher-dashboard" },
-    { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
+    { label: "Import Users", icon: Upload, id: "upload-excel", href: "/admin/upload-excel" },
     { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/schedules" },
     { label: "Announcements", icon: Bell, id: "announcements", href: "/events" },
     { label: "Profile", icon: User, id: "profile", href: "/profile" },

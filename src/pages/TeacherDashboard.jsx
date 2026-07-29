@@ -42,13 +42,13 @@ export default function TeacherDashboard() {
   const { data: classesData, isLoading: classesLoading, error: classesError } = useQuery(['teacher-classes', teacherId], () => teacherId ? backend.list('classes', { teacher_id: teacherId }) : Promise.resolve([]), { staleTime: 1000 * 30, enabled: !!teacherId })
   const { data: studentClassesData, error: studentClassesError } = useQuery(['all-student-classes'], () => backend.list('student_classes'), { staleTime: 1000 * 30 })
   const { data: schedulesData } = useQuery(['all-schedules'], () => backend.list('schedules'), { staleTime: 1000 * 30 })
-  const { data: eventsData, error: eventsError } = useQuery(['all-events'], () => backend.list('events'), { staleTime: 1000 * 30 })
+  const { data: announcementsData, isLoading: announcementsLoading, error: announcementsError } = useQuery(['teacher-announcements', teacherId], () => teacherId ? backend.list('teacher_announcements', { teacher_id: teacherId }) : Promise.resolve([]), { staleTime: 1000 * 30, enabled: !!teacherId })
 
   // Processing
   const classes = useMemo(() => getRows(classesData), [classesData])
   const studentClasses = useMemo(() => studentClassesError ? [] : getRows(studentClassesData), [studentClassesData, studentClassesError])
   const schedules = useMemo(() => getRows(schedulesData), [schedulesData])
-  const events = useMemo(() => eventsError ? [] : getRows(eventsData), [eventsData, eventsError])
+  const announcements = useMemo(() => announcementsError ? [] : getRows(announcementsData), [announcementsData, announcementsError])
 
   const classIds = useMemo(() => classes.map(c => c.id), [classes])
   const studentCount = useMemo(() => {
@@ -72,7 +72,7 @@ export default function TeacherDashboard() {
           <StatsCard title="My Classes" value={classes.length} icon={BookOpen} color="bg-teal-500" />
           <StatsCard title="Students" value={studentCount} icon={Users} color="bg-blue-500" />
           <StatsCard title="Today's Schedule" value={schedules.length} icon={ClipboardCheck} color="bg-purple-500" />
-          <StatsCard title="Announcements" value={events.length} icon={Bell} color="bg-amber-500" />
+          <StatsCard title="Announcements" value={announcements.length} icon={Bell} color="bg-amber-500" />
         </div>
 
         {!isLoading && (
@@ -97,7 +97,7 @@ export default function TeacherDashboard() {
             <TabsContent value="help"><RequestHelpTab teacherId={teacherId} /></TabsContent>
             <TabsContent value="volunteers"><VolunteersTab /></TabsContent>
             <TabsContent value="reviews"><ReviewsTab /></TabsContent>
-            <TabsContent value="announcements"><AnnouncementsTab announcements={events} /></TabsContent>
+            <TabsContent value="announcements"><AnnouncementsTab announcements={announcements} loading={announcementsLoading && !announcements.length} /></TabsContent>
           </Tabs>
         )}
       </div>

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 
-const RESOURCES = ['roles','user','class','rooms','messages','schedules','clubs','events','club_has_event','volunteer-requests']
+const RESOURCES = ['roles','user','class','announcements','schedules','clubs','events','club_has_event','volunteer-requests']
 
 function useList(res) {
   return useQuery(['backend', res], () => backend.list(res), { staleTime: 1000 * 30 })
@@ -22,7 +22,7 @@ export default function BackendAdmin(){
     : null
 
   useEffect(() => {
-    if (resource !== 'volunteer-requests' && resource !== 'messages') return undefined
+    if (resource !== 'volunteer-requests' && resource !== 'announcements') return undefined
     const interval = window.setInterval(() => {
       refetch()
     }, 5000)

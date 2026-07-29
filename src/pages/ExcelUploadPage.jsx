@@ -42,7 +42,7 @@ export default function ExcelUploadPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-teal-50/30">
       <div className="max-w-4xl mx-auto px-4 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-slate-900">Upload Excel Users</h1>
+          <h1 className="text-3xl font-bold text-slate-900">Import Users</h1>
           <p className="text-slate-500 mt-1">Import users into the database from an Excel spreadsheet.</p>
         </div>
 
