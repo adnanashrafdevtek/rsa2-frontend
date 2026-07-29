@@ -2,11 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 
-<<<<<<< HEAD
-const RESOURCES = ['roles','user','class','announcements','schedules','clubs','events','club_has_event','volunteer-requests']
-=======
 const RESOURCES = ['roles','user','class','rooms','messages','schedules','clubs','events','club_has_event']
->>>>>>> dd9fab8dbc10631a34f4b6a0db8646e02ecd901a
 
 function useList(res) {
   return useQuery(['backend', res], () => backend.list(res), { staleTime: 1000 * 30 })
@@ -21,11 +17,7 @@ export default function BackendAdmin(){
   const rows = Array.isArray(data) ? data : (data && data.mysqlResult) || []
 
   useEffect(() => {
-<<<<<<< HEAD
-    if (resource !== 'volunteer-requests' && resource !== 'announcements') return undefined
-=======
     if (resource !== 'messages') return undefined
->>>>>>> dd9fab8dbc10631a34f4b6a0db8646e02ecd901a
     const interval = window.setInterval(() => {
       refetch()
     }, 5000)

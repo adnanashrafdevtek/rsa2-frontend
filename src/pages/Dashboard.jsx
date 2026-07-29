@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Users, GraduationCap, Bell, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload } from 'lucide-react'
+import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake, Bell } from 'lucide-react'
+import VolunteersTab from '../components/VolunteersTab'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
