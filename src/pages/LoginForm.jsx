@@ -23,11 +23,16 @@ export default function LoginForm({ onLoginSuccess }) {
         localStorage.setItem('planner-current-user-id', data.user.id);
         localStorage.setItem('planner-current-role-id', data.user.role_id);
         localStorage.setItem('planner-current-user-name', `${data.user.first_name} ${data.user.last_name}`);
+        localStorage.setItem('planner-role', data.user.role_id === 3 ? 'Admin' : 'Teacher');
         
         onLoginSuccess(data.user);
 
-        // Reverted to default dashboard for all users
-        navigate('/dashboard'); 
+        // Redirect based on role ID
+        if (Number(data.user.role_id) === 2) {
+          navigate('/teacher-dashboard');
+        } else {
+          navigate('/');
+        }
         
       } else {
         setError(data.message || 'Login failed');

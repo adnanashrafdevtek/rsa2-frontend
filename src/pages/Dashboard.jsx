@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
+<<<<<<< HEAD
 import { Users, GraduationCap, Bell, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload } from 'lucide-react'
+=======
+import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake } from 'lucide-react'
+import VolunteersTab from '../components/VolunteersTab'
+>>>>>>> dd9fab8dbc10631a34f4b6a0db8646e02ecd901a
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -47,6 +52,12 @@ const RESOURCES = [
     { key: 'description', label: 'Description' },
     { key: 'room', label: 'Room' },
     { key: 'date', label: 'Date' },
+  ]},
+  { id: 'volunteers', label: 'Volunteers', icon: HeartHandshake, fields: [
+    { key: 'first_name', label: 'First Name' },
+    { key: 'last_name', label: 'Last Name' },
+    { key: 'email_address', label: 'Email' },
+    { key: 'status', label: 'Status' },
   ]},
 ]
 
@@ -517,6 +528,12 @@ function ResourcePanel({ resource, resourceMeta }) {
     } catch (submissionError) {
       setActionMessage(submissionError.message)
     }
+  }
+
+  // Volunteers gets its own dedicated UI (cards with check-in/check-out),
+  // reused from the teacher dashboard's VolunteersTab component.
+  if (resource === 'volunteers') {
+    return <VolunteersTab role="admin" />
   }
 
   return (
