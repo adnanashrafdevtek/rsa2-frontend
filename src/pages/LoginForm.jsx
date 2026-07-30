@@ -19,19 +19,25 @@ export default function LoginForm({ onLoginSuccess }) {
       
       const data = await response.json();
       if (response.ok) {
+        const roleId = Number(data.user.role_id);
+
         // Store essential user info
         localStorage.setItem('planner-current-user-id', data.user.id);
-        localStorage.setItem('planner-current-role-id', data.user.role_id);
+        localStorage.setItem('planner-current-role-id', roleId);
         localStorage.setItem('planner-current-user-name', `${data.user.first_name} ${data.user.last_name}`);
-        localStorage.setItem('planner-role', data.user.role_id === 3 ? 'Admin' : 'Teacher');
+        localStorage.setItem('planner-role', roleId === 1 ? 'Admin' : 'Teacher');
         
-        onLoginSuccess(data.user);
+        if (onLoginSuccess) {
+          onLoginSuccess(data.user);
+        }
 
-        // Redirect based on role ID
-        if (Number(data.user.role_id) === 2) {
+        // Strictly route based on role ID: 1 for Admin (Dashboard), 2 for Teacher (TeacherDashboard)
+        if (roleId === 2) {
           navigate('/teacher-dashboard');
+        } else if (roleId === 1) {
+          navigate('/'); // Maps to Dashboard.jsx
         } else {
-          navigate('/');
+          setError('Unauthorized role type');
         }
         
       } else {

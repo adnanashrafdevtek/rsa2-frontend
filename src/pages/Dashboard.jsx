@@ -4,6 +4,7 @@ import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake, Bell } from 'lucide-react'
 import VolunteersTab from '../components/VolunteersTab'
+import ReviewsTab from '../components/ReviewsTab'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -54,6 +55,12 @@ const RESOURCES = [
     { key: 'last_name', label: 'Last Name' },
     { key: 'email_address', label: 'Email' },
     { key: 'status', label: 'Status' },
+  ]},
+  { id: 'reviews', label: 'Reviews', icon: MessageSquare, fields: [
+    { key: 'user_id', label: 'User ID' },
+    { key: 'rating', label: 'Rating' },
+    { key: 'comment', label: 'Comment' },
+    { key: 'created_at', label: 'Created At' },
   ]},
 ]
 
@@ -531,6 +538,10 @@ function ResourcePanel({ resource, resourceMeta }) {
   if (resource === 'volunteers') {
     return <VolunteersTab role="admin" />
   }
+  if (resource === 'reviews') {
+    return <ReviewsTab />
+  }
+  
 
   return (
     <div className="space-y-6">
