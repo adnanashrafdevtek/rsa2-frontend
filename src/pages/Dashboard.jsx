@@ -5,6 +5,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake, Bell } from 'lucide-react'
 import VolunteersTab from '../components/VolunteersTab'
 import ReviewsTab from '../components/ReviewsTab'
+import ScheduleTable from '../components/ScheduleTable'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -969,128 +970,7 @@ function ResourcePanel({ resource, resourceMeta }) {
         ) : visibleRows.length === 0 ? (
           <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
         ) : (
-          <div className="overflow-auto">
-            <table className="min-w-full text-sm">
-              <thead className="bg-slate-50 text-left text-slate-700">
-                <tr>
-                      {resource === 'users' ? (
-                    <>
-                      <th className="whitespace-nowrap px-3 py-3 font-medium">First Name</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-medium">Last Name</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-medium">Email</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-medium">Role</th>
-                      <th className="whitespace-nowrap px-3 py-3 font-medium">Delete</th>
-                    </>
-                  ) : resource === 'events' ? (
-                    <>
-                      <th className="whitespace-nowrap px-3 py-3 font-medium">ID</th>
-                      {resourceMeta.fields.map((field) => (
-                        <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
-                      ))}
-                    </>
-                    ) : resource === 'announcements' ? (
-                      resourceMeta.fields.map((field) => (
-                        <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
-                      ))
-                    ) : resource === 'schedules' ? (
-                    resourceMeta.fields.map((field) => (
-                      <th key={field.key} className="whitespace-nowrap px-3 py-3 font-medium">{field.label}</th>
-                    ))
-                  ) : (
-                Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
-                  <th key={col} className="whitespace-nowrap px-3 py-3 font-medium">{col === 'role_id' ? 'Role' : col}</th>
-                ))
-                )}
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((row, index) => (
-                  <tr
-                    key={`${resource}-${row.id ?? index}`}
-                    className="border-t border-slate-100 bg-white hover:bg-slate-50"
-                  >
-                    {resource === 'users' ? (
-                      <>
-                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.first_name ?? ''}</td>
-                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.last_name ?? ''}</td>
-                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.email_address ?? ''}</td>
-                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                          <select
-                            value={row.role_id ? String(row.role_id) : ''}
-                            onChange={(event) => handleChangeUserRole(row, event.target.value)}
-                            className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 outline-none focus:border-teal-500"
-                          >
-                            <option value="">Select role</option>
-                            {roleOptions.map((role) => (
-                              <option key={role.id} value={String(role.id)}>
-                                {role.name}
-                              </option>
-                            ))}
-                          </select>
-                        </td>
-                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteUser(row)}
-                            className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
-                            aria-label={`Delete ${row.first_name || 'user'}`}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </td>
-                      </>
-                    ) : resource === 'events' ? (
-                      <>
-                        <td className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">{row.id ?? ''}</td>
-                        {resourceMeta.fields.map((field) => (
-                          <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                            {field.key === 'date' ? formatEventDateTime(row[field.key]) : String(row[field.key] ?? '')}
-                          </td>
-                        ))}
-                      </>
-                    ) : resource === 'announcements' ? (
-                      resourceMeta.fields.map((field) => {
-                        if (field.key === 'created_by') {
-                          const creator = userOptions.find((entry) => String(entry.id) === String(row.created_by))
-                          return (
-                            <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                              {formatUserName(creator)}
-                            </td>
-                          )
-                        }
-
-                        if (field.key === 'created_at') {
-                          return (
-                            <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                              {formatEventDateTime(row.created_at)}
-                            </td>
-                          )
-                        }
-
-                        return (
-                          <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                            {String(row[field.key] ?? '')}
-                          </td>
-                        )
-                      })
-                    ) : resource === 'schedules' ? (
-                      resourceMeta.fields.map((field) => (
-                        <td key={`${resource}-${field.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                          {String(row[field.key] ?? '')}
-                        </td>
-                      ))
-                    ) : (
-                      Object.keys(visibleRows[0]).filter((col) => col !== 'id').map((col) => (
-                        <td key={`${resource}-${col}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                          {String(row[col] ?? '')}
-                        </td>
-                      ))
-                    )}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ScheduleTable columns={resourceMeta.fields} rows={visibleRows} emptyMessage="No rows found for this resource." />
         )}
       </div>
       )}

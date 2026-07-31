@@ -2,12 +2,110 @@ import React, { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { HeartHandshake, LogIn, LogOut, Clock, X } from 'lucide-react';
 import backend from '../api/backendClient';
+import ScheduleTable from './ScheduleTable';
+
+function parseCSV(text) {
+  const normalizedText = String(text || '').replace(/\r/g, '')
+  const lines = normalizedText.split('\n').filter((line) => line.trim() !== '')
+
+  if (!lines.length) {
+    return { headers: [], rows: [] }
+  }
+
+  const parseLine = (line) => {
+    const cells = []
+    let current = ''
+    let inQuotes = false
+
+    for (let index = 0; index < line.length; index += 1) {
+      const character = line[index]
+
+      if (character === '"') {
+        if (inQuotes && line[index + 1] === '"') {
+          current += '"'
+          index += 1
+        } else {
+          inQuotes = !inQuotes
+        }
+        continue
+      }
+
+      if (character === ',' && !inQuotes) {
+        cells.push(current)
+        current = ''
+        continue
+      }
+
+      current += character
+    }
+
+    cells.push(current)
+    return cells.map((cell) => cell.trim())
+  }
+
+  const headers = parseLine(lines[0]).map((header) => header.trim()).filter(Boolean)
+  const rows = lines.slice(1).map((line) => {
+    const cells = parseLine(line)
+    return headers.reduce((accumulator, header, index) => {
+      accumulator[header] = cells[index] ?? ''
+      return accumulator
+    }, {})
+  }).filter((row) => Object.values(row).some((value) => String(value).trim() !== ''))
+
+  return { headers, rows }
+}
+
+function titleize(value) {
+  return String(value || '')
+    .replace(/_/g, ' ')
+    .trim()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase())
+}
+
+function normalizeValue(value) {
+  return String(value || '').trim().toLowerCase()
+}
+
+function buildClassKey(row) {
+  return [row.class_name, row.teacher, row.room, row.period, row.time]
+    .map(normalizeValue)
+    .filter(Boolean)
+    .join('|')
+}
+
+const TEACHER_SCHEDULE_COLUMNS = [
+  { key: 'Teacher', label: 'Teacher' },
+  { key: 'Class Name', label: 'Class Name' },
+  { key: 'Room', label: 'Room' },
+  { key: 'Period', label: 'Period' },
+  { key: 'Time', label: 'Time' },
+  { key: 'A-Day/B-Day', label: 'A-Day/B-Day' },
+  { key: 'Volunteers', label: 'Volunteers' },
+]
 
 export default function VolunteersTab({ role = 'teacher' }) {
   const queryClient = useQueryClient();
   const [loadingId, setLoadingId] = useState(null);
   const [selectedTeacherScheduleId, setSelectedTeacherScheduleId] = useState('');
   const [teacherScheduleMessage, setTeacherScheduleMessage] = useState('');
+  const [teacherScheduleFilters, setTeacherScheduleFilters] = useState({
+    teacher: '',
+    className: '',
+    room: '',
+    period: '',
+    time: '',
+    day: '',
+    volunteers: '',
+  });
+  const [appliedTeacherScheduleFilters, setAppliedTeacherScheduleFilters] = useState({
+    teacher: '',
+    className: '',
+    room: '',
+    period: '',
+    time: '',
+    day: '',
+    volunteers: '',
+  });
   
   // Modal state for class selection when assigning volunteers.
   const [selectedVolunteer, setSelectedVolunteer] = useState(null);
@@ -22,7 +120,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
   // Fetch users for teacher schedule uploads.
   const { data: usersData } = useQuery(['users'], () => backend.list('users'));
   const { data: classesData } = useQuery(['classes-for-volunteer-assignment'], () => backend.list('classes'));
-  const { data: schedulesData } = useQuery(['schedules-for-volunteer-dropdown'], () => backend.list('schedules'));
+  const { data: teacherSchedulesData } = useQuery(['teacher-schedules'], () => backend.list('user_schedules'));
 
   const volunteers = Array.isArray(volunteersData?.mysqlResult)
     ? volunteersData.mysqlResult
@@ -36,9 +134,9 @@ export default function VolunteersTab({ role = 'teacher' }) {
     ? classesData.mysqlResult
     : (Array.isArray(classesData) ? classesData : []);
 
-  const schedulesList = Array.isArray(schedulesData?.mysqlResult)
-    ? schedulesData.mysqlResult
-    : (Array.isArray(schedulesData) ? schedulesData : []);
+  const teacherSchedulesList = Array.isArray(teacherSchedulesData?.mysqlResult)
+    ? teacherSchedulesData.mysqlResult
+    : (Array.isArray(teacherSchedulesData) ? teacherSchedulesData : []);
 
   // Some environments use role_id 1 for Teacher, others use 2.
   const teachersList = usersList.filter(user => {
@@ -51,87 +149,170 @@ export default function VolunteersTab({ role = 'teacher' }) {
     return !status || status === 'available' || status === 'checked_out';
   });
 
-  const volunteeringStudentsByPeriod = useMemo(() => {
-    const grouped = new Map();
+  const uploadedTeacherSchedules = useMemo(() => {
+    const classLookup = new Map()
+    const classNameLookup = new Map()
 
-    schedulesList.forEach((schedule) => {
-      const className = String(schedule.class_name || '').trim().toLowerCase();
-      if (className !== 'volunteering') return;
+    classesList.forEach((classItem) => {
+      const teacher = teachersList.find((user) => String(user.id) === String(classItem.teacher_id))
+      const teacherLabel = teacher ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address : ''
+      const room = classItem.room_name || classItem.room || classItem.room_id
+      const compositeKey = [classItem.name, teacherLabel, room, classItem.period, classItem.time]
+        .map(normalizeValue)
+        .filter(Boolean)
+        .join('|')
 
-      const timeLabel = String(schedule.time || schedule.period || '').trim() || 'Unscheduled';
-      const studentId = schedule.student_id ?? schedule.user_id ?? schedule.id;
-      const studentName = String(schedule.student_name || schedule.name || '').trim() || `Student ${studentId || ''}`.trim();
-
-      if (!grouped.has(timeLabel)) {
-        grouped.set(timeLabel, []);
+      if (compositeKey) {
+        classLookup.set(compositeKey, classItem)
       }
 
-      const bucket = grouped.get(timeLabel);
-      if (!bucket.some((entry) => String(entry.studentId) === String(studentId) && entry.studentName === studentName)) {
-        bucket.push({ studentId, studentName, timeLabel });
+      const nameKey = normalizeValue(classItem.name)
+      if (nameKey && !classNameLookup.has(nameKey)) {
+        classNameLookup.set(nameKey, classItem)
       }
-    });
+    })
 
-    return Array.from(grouped.entries())
-      .sort((left, right) => left[0].localeCompare(right[0]))
-      .map(([timeLabel, students]) => ({
-        timeLabel,
-        students: students.sort((left, right) => left.studentName.localeCompare(right.studentName)),
-      }));
-  }, [schedulesList]);
+    const volunteersByClass = new Map()
+    volunteers.forEach((volunteer) => {
+      const classId = volunteer.assigned_class_id
+      if (!classId) return
 
-  const updateStatusMutation = useMutation(
-    async ({ studentId, endpoint, teacherId }) => {
-      const currentUserId = typeof window !== 'undefined'
-        ? window.localStorage.getItem('planner-current-user-id')
-        : 1;
-
-      let payload = { 
-        student_id: studentId,
-        class_id: teacherId ? Number(teacherId) : undefined, 
-        user_id: Number(currentUserId) 
-      };
-
-      const route = endpoint === 'check-out' ? 'volunteerHours/check-out' : 'volunteerHours/check-in';
-      
-      return await backend.create(route, payload);
-    },
-    {
-      onSuccess: () => {
-        queryClient.invalidateQueries(['volunteers']);
-        setLoadingId(null);
-        closeModal();
-      },
-      onError: (err) => {
-        console.error('Action error:', err);
-        setLoadingId(null);
+      if (!volunteersByClass.has(String(classId))) {
+        volunteersByClass.set(String(classId), [])
       }
+
+      const volunteerName = volunteer.name || `${volunteer.first_name || 'Volunteer'} ${volunteer.last_name || ''}`.trim() || `Volunteer ${volunteer.id}`
+      volunteersByClass.get(String(classId)).push(volunteerName)
+    })
+
+    return teacherSchedulesList
+      .filter((schedule) => String(schedule.user_type || '').toLowerCase() === 'teacher')
+      .map((schedule) => {
+        const teacherId = schedule.user_id;
+        const teacher = teachersList.find((user) => String(user.id) === String(teacherId));
+        const teacherName = teacher
+          ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacherId}`
+          : `Teacher ${teacherId}`;
+        const parsedSchedule = parseCSV(schedule.file_content || '')
+
+        const rows = parsedSchedule.rows.map((row) => {
+          const classKey = buildClassKey(row)
+          const matchedClass = classLookup.get(classKey) || classNameLookup.get(normalizeValue(row.class_name))
+          const rowVolunteers = matchedClass
+            ? (volunteersByClass.get(String(matchedClass.id)) || [])
+            : []
+
+          const className = row.class_name || matchedClass?.name || ''
+          const room = row.room || matchedClass?.room || matchedClass?.room_name || ''
+          const period = row.period || matchedClass?.period || ''
+          const time = row.time || matchedClass?.time || ''
+          const day = row['A-Day/B-Day'] || period || ''
+          const volunteersLabel = rowVolunteers.length > 0 ? rowVolunteers.join(', ') : '—'
+
+          return {
+            Teacher: teacherName,
+            'Class Name': className,
+            Room: room,
+            Period: period,
+            Time: time,
+            'A-Day/B-Day': day,
+            Volunteers: volunteersLabel,
+          }
+        })
+
+        return {
+          id: schedule.id,
+          teacherId,
+          teacherName,
+          fileName: schedule.file_name || 'Teacher schedule',
+          uploadedAt: schedule.created_at || schedule.updated_at || '',
+          columns: TEACHER_SCHEDULE_COLUMNS,
+          rows,
+          rowCount: rows.length || Number(schedule.imported_count || schedule.row_count || schedule.total_rows || 0),
+        };
+      })
+      .sort((left, right) => String(right.uploadedAt || '').localeCompare(String(left.uploadedAt || '')));
+  }, [teacherSchedulesList, teachersList, classesList, volunteers]);
+
+  const combinedTeacherScheduleRows = useMemo(() => {
+    return uploadedTeacherSchedules.flatMap((schedule) =>
+      schedule.rows.map((row) => ({
+        ...row,
+        __scheduleId: schedule.id,
+        __teacherName: schedule.teacherName,
+        __uploadedAt: schedule.uploadedAt,
+      }))
+    )
+  }, [uploadedTeacherSchedules])
+
+  const teacherScheduleFilterOptions = useMemo(() => {
+    const uniqueValues = (key) => {
+      const values = new Set()
+      combinedTeacherScheduleRows.forEach((row) => {
+        const value = String(row[key] || '').trim()
+        if (value && value !== '—') {
+          values.add(value)
+        }
+      })
+      return Array.from(values).sort((left, right) => left.localeCompare(right))
     }
-  );
 
-  const handleActionClick = (student, endpoint) => {
-    // The modal should only open when admin assigns an available volunteer to a class.
-    if (role === 'admin' && endpoint === 'check-out') {
-      setSelectedVolunteer(student);
-      setModalActionEndpoint(endpoint);
-      setSelectedClassId('');
-    } else {
-      // Teacher check-in/send-back and admin return confirmations execute instantly.
-      const studentId = student.id || student.student_id;
-      setLoadingId(studentId);
-      updateStatusMutation.mutate({ 
-        studentId, 
-        endpoint, 
-        teacherId: undefined 
-      });
+    return {
+      teacher: uniqueValues('Teacher'),
+      className: uniqueValues('Class Name'),
+      room: uniqueValues('Room'),
+      period: uniqueValues('Period'),
+      time: uniqueValues('Time'),
+      day: uniqueValues('A-Day/B-Day'),
+      volunteers: uniqueValues('Volunteers'),
     }
-  };
+  }, [combinedTeacherScheduleRows])
 
-  const closeModal = () => {
-    setSelectedVolunteer(null);
-    setModalActionEndpoint(null);
-    setSelectedClassId('');
-  };
+  const filteredTeacherScheduleRows = useMemo(() => {
+    const matches = (value, selected) => {
+      if (!selected) return true
+      return normalizeValue(value) === normalizeValue(selected)
+    }
+
+    return combinedTeacherScheduleRows.filter((row) => {
+      const volunteersValue = String(row.Volunteers || '').trim()
+      return (
+        matches(row.Teacher, appliedTeacherScheduleFilters.teacher) &&
+        matches(row['Class Name'], appliedTeacherScheduleFilters.className) &&
+        matches(row.Room, appliedTeacherScheduleFilters.room) &&
+        matches(row.Period, appliedTeacherScheduleFilters.period) &&
+        matches(row.Time, appliedTeacherScheduleFilters.time) &&
+        matches(row['A-Day/B-Day'], appliedTeacherScheduleFilters.day) &&
+        matches(volunteersValue, appliedTeacherScheduleFilters.volunteers)
+      )
+    })
+  }, [combinedTeacherScheduleRows, appliedTeacherScheduleFilters])
+
+  const setTeacherScheduleFilter = (key, value) => {
+    setTeacherScheduleFilters((current) => ({
+      ...current,
+      [key]: value,
+    }))
+  }
+
+  const applyTeacherScheduleFilters = () => {
+    setAppliedTeacherScheduleFilters(teacherScheduleFilters)
+  }
+
+  const resetTeacherScheduleFilters = () => {
+    const emptyFilters = {
+      teacher: '',
+      className: '',
+      room: '',
+      period: '',
+      time: '',
+      day: '',
+      volunteers: '',
+    }
+
+    setTeacherScheduleFilters(emptyFilters)
+    setAppliedTeacherScheduleFilters(emptyFilters)
+  }
 
   const handleConfirmAction = () => {
     if (!selectedVolunteer) return;
@@ -228,86 +409,97 @@ export default function VolunteersTab({ role = 'teacher' }) {
         <div className="overflow-hidden rounded-[28px] border border-slate-200 bg-white shadow-sm">
           <div className="grid gap-0 lg:grid-cols-[0.95fr_1.05fr]">
             <section className="border-b border-slate-200 bg-slate-50/80 p-4 lg:border-b-0 lg:border-r lg:p-5">
-              <div className="mb-4 flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Available</p>
-                  <h3 className="mt-1 text-lg font-semibold text-slate-900">Student volunteers</h3>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">{availableVolunteers.length}</span>
-              </div>
-
               {role === 'admin' && (
                 <div className="mb-4 rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
                   <div className="mb-3 flex items-center justify-between gap-2">
                     <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Volunteering schedule</p>
-                      <p className="text-sm font-semibold text-slate-900">Students by time</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Teacher schedules</p>
+                      <p className="text-sm font-semibold text-slate-900">Uploaded files</p>
                     </div>
-                    <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
-                      {volunteeringStudentsByPeriod.reduce((total, group) => total + group.students.length, 0)} students
+                    <span className="rounded-full bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700">
+                      {uploadedTeacherSchedules.length} uploaded
                     </span>
                   </div>
 
-                  {volunteeringStudentsByPeriod.length === 0 ? (
+                  {uploadedTeacherSchedules.length === 0 ? (
                     <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-500">
-                      No students are assigned to the Volunteering class in the schedules table yet.
+                      Upload a teacher schedule to show it here.
                     </div>
                   ) : (
                     <div className="space-y-3">
-                      {volunteeringStudentsByPeriod.map((group) => (
-                        <label key={group.timeLabel} className="block space-y-1 text-sm text-slate-600">
-                          <span className="font-medium text-slate-700">{group.timeLabel}</span>
-                          <select className="w-full rounded-2xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100">
-                            <option value="">Select student</option>
-                            {group.students.map((student) => (
-                              <option key={`${group.timeLabel}-${student.studentId}-${student.studentName}`} value={String(student.studentId || student.studentName)}>
-                                {student.studentName}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {availableVolunteers.length === 0 ? (
-                <div className="rounded-[20px] border border-dashed border-slate-200 bg-white py-10 text-center text-slate-400">
-                  <HeartHandshake className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                  <p className="text-sm font-medium">No available volunteers right now.</p>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {availableVolunteers.map((vol, idx) => {
-                    const studentId = vol.id || vol.student_id;
-                    const isLoading = loadingId === studentId;
-                    const volunteerName = vol.name || `${vol.first_name || 'Volunteer'} ${vol.last_name || ''}`;
-
-                    return (
-                      <div key={`available-${studentId || idx}`} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-                        <div className="flex items-start gap-3">
-                          <div className="rounded-2xl bg-amber-50 p-2.5 text-amber-600">
-                            <HeartHandshake className="h-5 w-5" />
+                      <div className="rounded-[24px] border border-slate-200 bg-slate-50 p-4 shadow-sm">
+                        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">Search schedules</div>
+                            <div className="text-xs text-slate-500">Filter the combined teacher schedule table below.</div>
                           </div>
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <p className="truncate font-semibold text-slate-900">{volunteerName}</p>
-                            <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                              <Clock className="h-3.5 w-3.5 text-amber-600" />
-                              <span>Total Hours: <strong className="text-slate-700">{vol.total_hours || '0.00'}</strong> hrs</span>
-                            </div>
+                          <button
+                            type="button"
+                            onClick={resetTeacherScheduleFilters}
+                            className="rounded-full border border-teal-200 bg-white px-3 py-1 text-xs font-semibold text-teal-700 transition hover:bg-teal-50"
+                          >
+                            Reset filters
+                          </button>
+                        </div>
+
+                        <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-3">
+                          {[
+                            ['teacher', 'Teacher'],
+                            ['className', 'Class Name'],
+                            ['room', 'Room'],
+                            ['period', 'Period'],
+                            ['time', 'Time'],
+                            ['day', 'A-Day/B-Day'],
+                            ['volunteers', 'Volunteers'],
+                          ].map(([key, label]) => (
+                            <label key={key} className="space-y-1 text-sm text-slate-600">
+                              <span className="font-medium">{label}</span>
+                              <select
+                                value={teacherScheduleFilters[key]}
+                                onChange={(event) => setTeacherScheduleFilter(key, event.target.value)}
+                                className="w-full rounded-2xl border border-slate-300 bg-white px-3 py-2.5 text-sm shadow-sm outline-none transition focus:border-teal-500 focus:ring-2 focus:ring-teal-100"
+                              >
+                                <option value="">All {label.toLowerCase()}</option>
+                                {teacherScheduleFilterOptions[key].map((option) => (
+                                  <option key={`${key}-${option}`} value={option}>
+                                    {option}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          ))}
+                        </div>
+
+                        <div className="mt-4 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={applyTeacherScheduleFilters}
+                            className="rounded-2xl bg-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700"
+                          >
+                            Apply filters
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                          <div>
+                            <div className="text-sm font-semibold text-slate-900">Combined teacher schedules</div>
+                            <div className="text-xs text-slate-500">All uploaded teacher schedules are shown together below.</div>
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            {filteredTeacherScheduleRows.length} row{filteredTeacherScheduleRows.length === 1 ? '' : 's'}
                           </div>
                         </div>
-                        <button
-                          onClick={() => handleActionClick(vol, 'check-out')}
-                          disabled={isLoading || classesList.length === 0}
-                          className="mt-3 w-full rounded-2xl bg-rose-50 px-3 py-2 text-sm font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
-                        >
-                          Assign to class
-                        </button>
+
+                        <ScheduleTable
+                          columns={TEACHER_SCHEDULE_COLUMNS}
+                          rows={filteredTeacherScheduleRows}
+                          emptyMessage="No schedule rows match the selected filters."
+                        />
                       </div>
-                    );
-                  })}
+                    </div>
+                  )}
                 </div>
               )}
             </section>
@@ -315,20 +507,20 @@ export default function VolunteersTab({ role = 'teacher' }) {
             <section className="p-4 lg:p-5">
               <div className="mb-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">All records</p>
-                  <h3 className="mt-1 text-lg font-semibold text-slate-900">Volunteer roster</h3>
-                  <p className="text-xs text-slate-500">Manage teacher assignments, check-ins, and return confirmations.</p>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Available volunteers</p>
+                  <h3 className="mt-1 text-lg font-semibold text-slate-900">Volunteer list</h3>
+                  <p className="text-xs text-slate-500">Use the schedule list on the left to review uploaded teacher schedules.</p>
                 </div>
               </div>
 
-              {volunteers.length === 0 ? (
+              {availableVolunteers.length === 0 ? (
                 <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 py-12 text-center text-slate-400">
                   <HeartHandshake className="mx-auto mb-2 h-8 w-8 opacity-40" />
                   <p className="text-sm font-medium">No volunteers found.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {volunteers.map((vol, idx) => {
+                  {availableVolunteers.map((vol, idx) => {
                     const studentId = vol.id || vol.student_id;
                     const isLoading = loadingId === studentId;
                     const status = vol.status || 'available';
