@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { HeartHandshake, LogIn, LogOut, Clock, X } from 'lucide-react';
 import backend from '../api/backendClient';
@@ -73,6 +73,54 @@ function buildClassKey(row) {
     .join('|')
 }
 
+function parseTimeToMinutes(value) {
+  const text = String(value || '').trim()
+  if (!text) return null
+
+  const match = text.match(/^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/i)
+  if (!match) return null
+
+  let hours = Number(match[1])
+  const minutes = Number(match[2] || '0')
+  const meridiem = match[3]?.toLowerCase() || ''
+
+  if (Number.isNaN(hours) || Number.isNaN(minutes)) return null
+
+  if (meridiem === 'pm' && hours < 12) hours += 12
+  if (meridiem === 'am' && hours === 12) hours = 0
+
+  return (hours * 60) + minutes
+}
+
+function parseTimeRange(value) {
+  const text = String(value || '').trim()
+  if (!text) return null
+
+  const normalized = text.replace(/\s+/g, '')
+  const rangeMatch = normalized.match(/^(.*?)\s*[-–]\s*(.*)$/)
+  if (!rangeMatch) {
+    const singleTime = parseTimeToMinutes(normalized)
+    return singleTime === null ? null : { start: singleTime, end: singleTime }
+  }
+
+  const start = parseTimeToMinutes(rangeMatch[1])
+  const end = parseTimeToMinutes(rangeMatch[2])
+  if (start === null || end === null) return null
+
+  return { start, end }
+}
+
+function isTimeWithinRange(currentMinutes, rangeText) {
+  const range = parseTimeRange(rangeText)
+  if (!range) return false
+
+  if (range.start <= range.end) {
+    return currentMinutes >= range.start && currentMinutes <= range.end
+  }
+
+  return currentMinutes >= range.start || currentMinutes <= range.end
+}
+
 const TEACHER_SCHEDULE_COLUMNS = [
   { key: 'Teacher', label: 'Teacher' },
   { key: 'Class Name', label: 'Class Name' },
@@ -85,6 +133,7 @@ const TEACHER_SCHEDULE_COLUMNS = [
 
 export default function VolunteersTab({ role = 'teacher' }) {
   const queryClient = useQueryClient();
+  const [now, setNow] = useState(() => new Date());
   const [loadingId, setLoadingId] = useState(null);
   const [selectedTeacherScheduleId, setSelectedTeacherScheduleId] = useState('');
   const [teacherScheduleMessage, setTeacherScheduleMessage] = useState('');
@@ -120,6 +169,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
   // Fetch users for teacher schedule uploads.
   const { data: usersData } = useQuery(['users'], () => backend.list('users'));
   const { data: classesData } = useQuery(['classes-for-volunteer-assignment'], () => backend.list('classes'));
+  const { data: schedulesData } = useQuery(['schedules-for-volunteer-list'], () => backend.list('schedules'));
   const { data: teacherSchedulesData } = useQuery(['teacher-schedules'], () => backend.list('user_schedules'));
 
   const volunteers = Array.isArray(volunteersData?.mysqlResult)
@@ -138,16 +188,23 @@ export default function VolunteersTab({ role = 'teacher' }) {
     ? teacherSchedulesData.mysqlResult
     : (Array.isArray(teacherSchedulesData) ? teacherSchedulesData : []);
 
+  const schedulesList = Array.isArray(schedulesData?.mysqlResult)
+    ? schedulesData.mysqlResult
+    : (Array.isArray(schedulesData) ? schedulesData : []);
+
   // Some environments use role_id 1 for Teacher, others use 2.
   const teachersList = usersList.filter(user => {
     const roleId = Number(user.role_id);
     return roleId === 1 || roleId === 2;
   });
 
-  const availableVolunteers = volunteers.filter((vol) => {
-    const status = String(vol.status || '').toLowerCase();
-    return !status || status === 'available' || status === 'checked_out';
-  });
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+
+    return () => window.clearInterval(timerId);
+  }, []);
 
   const uploadedTeacherSchedules = useMemo(() => {
     const classLookup = new Map()
@@ -202,6 +259,8 @@ export default function VolunteersTab({ role = 'teacher' }) {
             ? (volunteersByClass.get(String(matchedClass.id)) || [])
             : []
 
+          const studentId = row.student_id || row.studentId || ''
+          const studentName = row.student_name || row.studentName || ''
           const className = row.class_name || matchedClass?.name || ''
           const room = row.room || matchedClass?.room || matchedClass?.room_name || ''
           const period = row.period || matchedClass?.period || ''
@@ -210,6 +269,8 @@ export default function VolunteersTab({ role = 'teacher' }) {
           const volunteersLabel = rowVolunteers.length > 0 ? rowVolunteers.join(', ') : '—'
 
           return {
+            'Student ID': studentId,
+            'Student Name': studentName,
             Teacher: teacherName,
             'Class Name': className,
             Room: room,
@@ -244,6 +305,35 @@ export default function VolunteersTab({ role = 'teacher' }) {
       }))
     )
   }, [uploadedTeacherSchedules])
+
+  const availableVolunteers = useMemo(() => {
+    const currentMinutes = (now.getHours() * 60) + now.getMinutes()
+    const studentsById = new Map()
+
+    schedulesList.forEach((row) => {
+      const className = normalizeValue(row.class_name || row.className)
+      if (className !== 'volunteering') return
+
+      if (!isTimeWithinRange(currentMinutes, row.time)) return
+
+      const studentId = String(row.student_id || row.studentId || '').trim()
+      const studentName = String(row.student_name || row.studentName || '').trim()
+      const key = studentId || normalizeValue(studentName)
+      if (!key || studentsById.has(key)) return
+
+      studentsById.set(key, {
+        id: studentId || undefined,
+        student_id: studentId || undefined,
+        name: studentName || (studentId ? `Student ${studentId}` : 'Volunteer'),
+        first_name: studentName || '',
+        last_name: '',
+        status: 'available',
+        total_hours: '0.00',
+      })
+    })
+
+    return Array.from(studentsById.values())
+  }, [schedulesList, now])
 
   const teacherScheduleFilterOptions = useMemo(() => {
     const uniqueValues = (key) => {
@@ -509,14 +599,14 @@ export default function VolunteersTab({ role = 'teacher' }) {
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Available volunteers</p>
                   <h3 className="mt-1 text-lg font-semibold text-slate-900">Volunteer list</h3>
-                  <p className="text-xs text-slate-500">Use the schedule list on the left to review uploaded teacher schedules.</p>
+                  <p className="text-xs text-slate-500">Students currently in the Volunteering class appear here.</p>
                 </div>
               </div>
 
               {availableVolunteers.length === 0 ? (
                 <div className="rounded-[20px] border border-dashed border-slate-200 bg-slate-50 py-12 text-center text-slate-400">
                   <HeartHandshake className="mx-auto mb-2 h-8 w-8 opacity-40" />
-                  <p className="text-sm font-medium">No volunteers found.</p>
+                  <p className="text-sm font-medium">No students are currently in Volunteering.</p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -578,7 +668,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
                             <div className="mt-3 grid gap-2 sm:grid-cols-2">
                               <button
                                 onClick={() => handleActionClick(vol, 'check-in')}
-                                disabled={isLoading || !canCheckIn}
+                                disabled={isLoading || !canCheckIn || !studentId}
                                 className="flex items-center justify-center gap-1 rounded-2xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <LogIn className="h-3.5 w-3.5" />
@@ -586,7 +676,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
                               </button>
                               <button
                                 onClick={() => handleActionClick(vol, 'check-out')}
-                                disabled={isLoading || !canCheckOut}
+                                disabled={isLoading || !canCheckOut || !studentId}
                                 className="flex items-center justify-center gap-1 rounded-2xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 transition-colors hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <LogOut className="h-3.5 w-3.5" />
