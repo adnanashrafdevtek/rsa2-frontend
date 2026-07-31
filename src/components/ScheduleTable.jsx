@@ -23,7 +23,7 @@ function normalizeColumns(columns, rows) {
     }))
 }
 
-export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No rows found.', className = '' }) {
+export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No rows found.', className = '', renderCell }) {
   const normalizedColumns = useMemo(() => normalizeColumns(columns, rows), [columns, rows])
 
   if (!rows.length) {
@@ -52,7 +52,7 @@ export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No r
               <tr key={row.id ?? `${index}`} className="border-t border-slate-100 bg-white hover:bg-slate-50">
                 {normalizedColumns.map((column) => (
                   <td key={`${column.key}-${index}`} className="max-w-xs whitespace-nowrap px-3 py-3 text-slate-600">
-                    {String(row[column.key] ?? '')}
+                      {renderCell ? renderCell(row, column) ?? String(row[column.key] ?? '') : String(row[column.key] ?? '')}
                   </td>
                 ))}
               </tr>

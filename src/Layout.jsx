@@ -92,7 +92,7 @@ export default function Layout({ children }) {
   const allNavItems = [
     { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/", adminOnly: true },
     { label: "Teacher Dashboard", icon: BookOpen, id: "teacher-dashboard", href: "/teacher-dashboard", teacherOnly: true },
-    { label: "Upload Excel", icon: Upload, id: "upload-excel", href: "/admin/upload-excel", adminOnly: true },
+    { label: "Import Users", icon: Upload, id: "upload-excel", href: "/admin/upload-excel", adminOnly: true },
     { label: "Schedules", icon: CalendarDays, id: "schedules", href: "/schedules", adminOnly: false },
     { label: "Announcements", icon: Bell, id: "announcements", href: "/events", adminOnly: false },
     { label: "Profile", icon: User, id: "profile", href: "/profile", adminOnly: false },

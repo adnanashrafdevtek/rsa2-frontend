@@ -12,6 +12,8 @@ function getRows(payload) {
   return (payload && payload.mysqlResult) || []
 }
 
+const USER_ROLE_OPTIONS = ['Admin', 'Teacher', 'Student']
+
 const RESOURCES = [
   { id: 'users', label: 'Users', icon: Users, fields: [
     { key: 'first_name', label: 'First Name' },
@@ -216,6 +218,7 @@ function ResourcePanel({ resource, resourceMeta }) {
     return rows
   }, [resource, rows, filters, userOptions])
   const roleOptions = useMemo(() => getRows(roleOptionsData), [roleOptionsData])
+  const roleNameById = useMemo(() => Object.fromEntries(roleOptions.map((role) => [String(role.id), String(role.name || '').trim()])), [roleOptions])
 
   const teacherOptions = useMemo(() => {
     if (Array.isArray(teacherOptionsData)) return teacherOptionsData
@@ -241,9 +244,8 @@ function ResourcePanel({ resource, resourceMeta }) {
   }, [currentUserId, userOptions])
 
   const currentUserRoleName = useMemo(() => {
-    const roleMap = Object.fromEntries(roleOptions.map((role) => [String(role.id), role.name]))
-    return currentUser ? roleMap[String(currentUser.role_id)] || currentUser.role_name || `Role ${currentUser.role_id}` : 'Unassigned'
-  }, [currentUser, roleOptions])
+    return currentUser ? roleNameById[String(currentUser.role_id)] || currentUser.role_name || `Role ${currentUser.role_id}` : 'Unassigned'
+  }, [currentUser, roleNameById])
 
   useEffect(() => {
     if (!userOptions.length) return
@@ -504,21 +506,27 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
-  const handleChangeUserRole = async (user, roleId) => {
-    const selectedRole = roleOptions.find((role) => String(role.id) === String(roleId))
+  const handleChangeUserRole = async (user, nextRoleName) => {
+    if (!nextRoleName) return
 
-    if (!selectedRole) {
-      setActionMessage('Select a valid role.')
+    if (!isAdmin) {
+      setActionMessage('Only admin users can change roles.')
       return
     }
 
     try {
-      await backend.update('users', user.id, { role_id: Number(roleId) }, { userRole: 'Admin' })
-      setActionMessage(`Updated ${user.first_name || 'User'}'s role to ${selectedRole.name}.`)
+      await backend.update('users', user.id, { role_name: nextRoleName }, { userRole: 'Admin' })
+      setActionMessage(`Updated ${formatUserName(user)} to ${nextRoleName}.`)
       await Promise.all([refetchUsers(), refetchRoles(), refetch()])
     } catch (submissionError) {
       setActionMessage(submissionError.message)
     }
+  }
+
+  const getUserRoleLabel = (user) => {
+    const rawRoleName = roleNameById[String(user.role_id)] || String(user.role_name || '').trim()
+    const matchedRole = USER_ROLE_OPTIONS.find((option) => option.toLowerCase() === rawRoleName.toLowerCase())
+    return matchedRole || rawRoleName || 'Unassigned'
   }
 
   const handleDeleteUser = async (user) => {
@@ -970,7 +978,34 @@ function ResourcePanel({ resource, resourceMeta }) {
         ) : visibleRows.length === 0 ? (
           <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
         ) : (
-          <ScheduleTable columns={resourceMeta.fields} rows={visibleRows} emptyMessage="No rows found for this resource." />
+          <ScheduleTable
+            columns={resourceMeta.fields}
+            rows={visibleRows}
+            emptyMessage="No rows found for this resource."
+            renderCell={resource === 'users' ? (row, column) => {
+              if (column.key !== 'role_id') {
+                return null
+              }
+
+              const currentRoleName = getUserRoleLabel(row)
+
+              return (
+                <select
+                  value={USER_ROLE_OPTIONS.includes(currentRoleName) ? currentRoleName : ''}
+                  onChange={(event) => handleChangeUserRole(row, event.target.value)}
+                  className="min-w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-0 focus:border-teal-500"
+                  disabled={!isAdmin}
+                >
+                  <option value="">Select role</option>
+                  {USER_ROLE_OPTIONS.map((roleName) => (
+                    <option key={roleName} value={roleName}>
+                      {roleName}
+                    </option>
+                  ))}
+                </select>
+              )
+            } : undefined}
+          />
         )}
       </div>
       )}

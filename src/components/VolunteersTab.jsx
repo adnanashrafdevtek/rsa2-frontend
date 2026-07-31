@@ -66,6 +66,14 @@ function normalizeValue(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+function normalizeDayLabel(value) {
+  const normalized = normalizeValue(value)
+  if (!normalized) return ''
+  if (normalized === 'a-day' || normalized === 'a day') return 'A-day'
+  if (normalized === 'b-day' || normalized === 'b day') return 'B-day'
+  return ''
+}
+
 function buildClassKey(row) {
   return [row.class_name, row.teacher, row.room, row.period, row.time]
     .map(normalizeValue)
@@ -265,7 +273,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
           const room = row.room || matchedClass?.room || matchedClass?.room_name || ''
           const period = row.period || matchedClass?.period || ''
           const time = row.time || matchedClass?.time || ''
-          const day = row['A-Day/B-Day'] || period || ''
+          const day = normalizeDayLabel(row['A-Day/B-Day'] || period || '')
           const volunteersLabel = rowVolunteers.length > 0 ? rowVolunteers.join(', ') : '—'
 
           return {
@@ -353,7 +361,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
       room: uniqueValues('Room'),
       period: uniqueValues('Period'),
       time: uniqueValues('Time'),
-      day: uniqueValues('A-Day/B-Day'),
+      day: ['A-day', 'B-day'],
       volunteers: uniqueValues('Volunteers'),
     }
   }, [combinedTeacherScheduleRows])
@@ -372,7 +380,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
         matches(row.Room, appliedTeacherScheduleFilters.room) &&
         matches(row.Period, appliedTeacherScheduleFilters.period) &&
         matches(row.Time, appliedTeacherScheduleFilters.time) &&
-        matches(row['A-Day/B-Day'], appliedTeacherScheduleFilters.day) &&
+        matches(normalizeDayLabel(row['A-Day/B-Day']), appliedTeacherScheduleFilters.day) &&
         matches(volunteersValue, appliedTeacherScheduleFilters.volunteers)
       )
     })
@@ -539,7 +547,7 @@ export default function VolunteersTab({ role = 'teacher' }) {
                             ['room', 'Room'],
                             ['period', 'Period'],
                             ['time', 'Time'],
-                            ['day', 'A-Day/B-Day'],
+                            ['day', 'A-day/B-day'],
                             ['volunteers', 'Volunteers'],
                           ].map(([key, label]) => (
                             <label key={key} className="space-y-1 text-sm text-slate-600">
