@@ -33,6 +33,8 @@ export default defineConfig({
       '/user_schedules': 'http://localhost:3000',
       '/user/import-file': 'http://localhost:3000',
       '/volunteers': 'http://localhost:3000',
+      '/volunteer-requests': 'http://localhost:3000',
+      '/volunteer-assignments': 'http://localhost:3000',
       '/volunteerHours': 'http://localhost:3000', 
       '/reviews': 'http://localhost:3000',
       '/review': 'http://localhost:3000',

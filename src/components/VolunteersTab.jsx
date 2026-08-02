@@ -169,10 +169,9 @@ export default function VolunteersTab({ role = 'teacher' }) {
   const [selectedClassId, setSelectedClassId] = useState('');
   const [modalActionEndpoint, setModalActionEndpoint] = useState(null);
 
-  // Fetch volunteers
-  const { data: volunteersData } = useQuery(['volunteers'], () => backend.list('volunteers'), {
-    refetchInterval: 5000,
-  });
+function normalizeText(value) {
+  return String(value || '').trim().toLowerCase()
+}
 
   // Fetch users for teacher schedule uploads.
   const { data: usersData } = useQuery(['users'], () => backend.list('users'));
@@ -180,17 +179,28 @@ export default function VolunteersTab({ role = 'teacher' }) {
   const { data: schedulesData } = useQuery(['schedules-for-volunteer-list'], () => backend.list('schedules'));
   const { data: teacherSchedulesData } = useQuery(['teacher-schedules'], () => backend.list('user_schedules'));
 
-  const volunteers = Array.isArray(volunteersData?.mysqlResult)
-    ? volunteersData.mysqlResult
-    : (Array.isArray(volunteersData) ? volunteersData : []);
+function formatDuration(startValue, endValue) {
+  if (!startValue) return '—'
+  const start = new Date(String(startValue).replace(' ', 'T'))
+  const end = endValue ? new Date(String(endValue).replace(' ', 'T')) : new Date()
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return '—'
+  const minutes = Math.max(Math.round((end - start) / 60000), 0)
+  const hours = Math.floor(minutes / 60)
+  const remaining = minutes % 60
+  return `${hours}h ${String(remaining).padStart(2, '0')}m`
+}
 
-  const usersList = Array.isArray(usersData?.mysqlResult)
-    ? usersData.mysqlResult
-    : (Array.isArray(usersData) ? usersData : []);
+export default function VolunteersTab() {
+  const queryClient = useQueryClient()
+  const teacherId = typeof window !== 'undefined' ? Number(window.localStorage.getItem('planner-current-user-id') || 0) : 0
+  const [loadingId, setLoadingId] = useState(null)
+  const [errorMessage, setErrorMessage] = useState('')
 
-  const classesList = Array.isArray(classesData?.mysqlResult)
-    ? classesData.mysqlResult
-    : (Array.isArray(classesData) ? classesData : []);
+  const { data: classesData, isLoading: classesLoading, error: classesError } = useQuery(
+    ['teacher-volunteer-classes', teacherId],
+    () => (teacherId ? backend.list('classes', { teacher_id: teacherId }) : Promise.resolve([])),
+    { enabled: !!teacherId, refetchInterval: 5000 }
+  )
 
   const teacherSchedulesList = Array.isArray(teacherSchedulesData?.mysqlResult)
     ? teacherSchedulesData.mysqlResult
@@ -703,59 +713,152 @@ export default function VolunteersTab({ role = 'teacher' }) {
         </div>
       </div>
 
-      {/* Class selection modal for admin assignment. */}
-      {selectedVolunteer && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl space-y-4 relative">
-            <button onClick={closeModal} className="absolute top-4 right-4 text-slate-400 hover:text-slate-600">
-              <X className="w-5 h-5" />
-            </button>
-            
-            <h4 className="text-base font-bold text-slate-900">Select Target Class</h4>
-            <p className="text-xs text-slate-500">
-              Choose the class you want to assign <strong>{selectedVolunteer.name || selectedVolunteer.first_name}</strong> to:
-            </p>
+      {error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <AlertCircle className="h-4 w-4" />
+          {errorMessage || error.message || 'Unable to load volunteer data.'}
+        </div>
+      )}
 
-            <select
-              value={selectedClassId}
-              onChange={(e) => setSelectedClassId(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl p-2.5 text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
-            >
-              <option value="">-- Select a Class --</option>
-              {classesList.map((classItem) => {
-                const classIdValue = classItem.id;
-                const classLabel = classItem.name || `Class #${classIdValue}`;
-                const teacher = teachersList.find((teacherItem) => String(teacherItem.id) === String(classItem.teacher_id));
-                const teacherLabel = teacher
-                  ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
-                  : (classItem.teacher_id ? `Teacher ${classItem.teacher_id}` : 'Unassigned teacher');
-                const details = [classItem.period, classItem.room].filter(Boolean).join(' | ');
-                return (
-                  <option key={classIdValue} value={classIdValue}>
-                    {`${classLabel} - ${teacherLabel}${details ? ` (${details})` : ''}`}
-                  </option>
-                );
-              })}
-            </select>
+      {errorMessage && !error && (
+        <div className="flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+          <AlertCircle className="h-4 w-4" />
+          {errorMessage}
+        </div>
+      )}
 
-            <div className="flex justify-end gap-2 pt-2">
-              <button 
-                onClick={closeModal}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleConfirmAction}
-                disabled={!selectedClassId}
-                className="px-4 py-2 rounded-xl text-xs font-semibold bg-amber-600 hover:bg-amber-700 text-white disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                Assign Volunteer
-              </button>
-            </div>
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Assigned</p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{assignedTeacherCount}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Active Now</p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{activeAssignmentCount}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Completed</p>
+          <p className="mt-2 text-2xl font-bold text-slate-900">{completedSessionCount}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Current Volunteer</p>
+          <p className="mt-2 text-xl font-bold text-slate-900 truncate">{currentVolunteer ? currentVolunteer.studentName : 'None'}</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        <div>
+          <h4 className="text-base font-semibold text-slate-900">Assigned Volunteers</h4>
+          <p className="text-xs text-slate-500">Cards update in real time when admin assignments, check-ins, or check-outs change.</p>
+        </div>
+
+        {teacherAssignments.length ? (
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {teacherAssignments.map((item) => {
+              const isChecking = loadingId === item.studentId
+              const canCheckIn = item.status === 'requesting_confirmation'
+              const canCheckOut = item.status === 'checked_in'
+              const waitingOnAdmin = item.status === 'returning_confirmation'
+
+              return (
+                <div key={item.id} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:shadow-md">
+                  <div className="flex items-start gap-3">
+                    <div className="rounded-xl bg-amber-50 p-2.5 text-amber-600">
+                      <HeartHandshake className="h-5 w-5" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="font-bold text-slate-900 truncate">{item.studentName}</p>
+                      <p className="text-sm text-slate-500">{item.className} · {item.room} · Period {item.period}</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${item.status === 'checked_in' ? 'bg-emerald-100 text-emerald-700' : item.status === 'requesting_confirmation' ? 'bg-amber-100 text-amber-700' : item.status === 'returning_confirmation' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600'}`}>
+                      {item.status === 'checked_in' ? 'Checked In' : item.status === 'requesting_confirmation' ? 'Waiting to Check In' : item.status === 'returning_confirmation' ? 'Waiting on Admin' : 'Assigned'}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                      {item.totalHours || '0.00'} hrs
+                    </span>
+                  </div>
+
+                  <div className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Check In</span>
+                      <span className="font-medium text-slate-800">{formatTime(item.checkIn)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Check Out</span>
+                      <span className="font-medium text-slate-800">{formatTime(item.checkOut)}</span>
+                    </div>
+                    <div className="flex items-center justify-between gap-3">
+                      <span>Duration</span>
+                      <span className="font-medium text-slate-800">{formatDuration(item.checkIn, item.checkOut)}</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex gap-2">
+                    <button
+                      disabled={!canCheckIn || isChecking}
+                      onClick={() => handleCheckInOut.mutate({ volunteerId: item.studentId, endpoint: 'check-in' })}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-50 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <LogIn className="h-4 w-4" />
+                      {isChecking && canCheckIn ? 'Checking in...' : 'Check In'}
+                    </button>
+                    <button
+                      disabled={!canCheckOut || isChecking}
+                      onClick={() => handleCheckInOut.mutate({ volunteerId: item.studentId, endpoint: 'check-out' })}
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      {isChecking && canCheckOut ? 'Checking out...' : 'Check Out'}
+                    </button>
+                  </div>
+
+                  {waitingOnAdmin && (
+                    <p className="mt-3 text-xs text-purple-600">Waiting for admin confirmation to finalize hours.</p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-dashed border-slate-200 py-10 text-center text-slate-400">
+            <HeartHandshake className="mx-auto mb-2 h-8 w-8 opacity-40" />
+            <p className="text-sm font-medium">No volunteers assigned to your classrooms yet.</p>
+          </div>
+        )}
+      </div>
+
+      {completedVolunteers.length > 0 && (
+        <div className="space-y-3">
+          <div>
+            <h4 className="text-base font-semibold text-slate-900">Completed Sessions</h4>
+            <p className="text-xs text-slate-500">Recent completed sessions stay synced from Volunteer_Hours.</p>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            {completedVolunteers.slice(0, 6).map((session) => (
+              <div key={session.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-slate-900">{session.studentName}</p>
+                    <p className="text-xs text-slate-500">{session.className} · {session.room} · Period {session.period}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${normalizeText(session.status) === 'approved' ? 'bg-emerald-100 text-emerald-700' : normalizeText(session.status) === 'rejected' ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                    {session.status}
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-1 text-xs text-slate-600">
+                  <div className="flex justify-between gap-3"><span>Check In</span><span>{formatTime(session.checkIn)}</span></div>
+                  <div className="flex justify-between gap-3"><span>Check Out</span><span>{formatTime(session.checkOut)}</span></div>
+                  <div className="flex justify-between gap-3"><span>Total Hours</span><span>{session.total_hours || '0.00'}</span></div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
     </div>
-  );
+  )
 }
