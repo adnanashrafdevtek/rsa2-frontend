@@ -15,7 +15,6 @@ import AnnouncementsTab from '../components/AnnouncementsTab'
 
 // Placeholders
 import MyClassesPlaceholder from '../components/StudentsPlaceholder'
-import VolunteersPlaceholder from '../components/VolunteersPlaceholder'
 import ReviewsPlaceholder from '../components/ReviewsPlaceholder'
 import AnnouncementsPlaceholder from '../components/AnnouncementsPlaceholder'
 

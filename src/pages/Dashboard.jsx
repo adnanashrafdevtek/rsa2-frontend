@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
 import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake, Bell } from 'lucide-react'
-import VolunteersTab from '../components/VolunteersTab'
+import AdminVolunteerPanel from '../components/AdminVolunteerPanel'
 import ReviewsTab from '../components/ReviewsTab'
 import ScheduleTable from '../components/ScheduleTable'
 
@@ -542,10 +542,9 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
-  // Volunteers gets its own dedicated UI (cards with check-in/check-out),
-  // reused from the teacher dashboard's VolunteersTab component.
+  // Volunteers gets its own dedicated UI for admin management.
   if (resource === 'volunteers') {
-    return <VolunteersTab role="admin" />
+    return <AdminVolunteerPanel />
   }
   if (resource === 'reviews') {
     return <ReviewsTab />
