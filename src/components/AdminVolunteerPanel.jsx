@@ -12,6 +12,14 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+const formatStatusLabel = (status) => {
+  if (!status) return 'Available'
+  return status
+    .replace(/_/g, ' ')
+    .toLowerCase()
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+}
+
 export default function AdminVolunteerPanel() {
   const queryClient = useQueryClient()
   const [selectedTeacherScheduleId, setSelectedTeacherScheduleId] = useState('')
@@ -24,6 +32,8 @@ export default function AdminVolunteerPanel() {
   const [timeFilter, setTimeFilter] = useState('all')
   const [dayFilter, setDayFilter] = useState('all')
   const [volunteerFilter, setVolunteerFilter] = useState('all')
+
+  const [selectedClassSelections, setSelectedClassSelections] = useState({})
 
   const { data: usersData } = useQuery(['users'], () => backend.list('users'), { refetchInterval: 5000 })
   const { data: classesData } = useQuery(['classes'], () => backend.list('classes'), { refetchInterval: 5000 })
@@ -101,7 +111,18 @@ export default function AdminVolunteerPanel() {
       .filter((volunteer) => normalizeText(volunteer.status) !== 'inactive')
       .map((volunteer) => {
         const fullName = volunteer.name || `${volunteer.first_name || ''} ${volunteer.last_name || ''}`.trim() || volunteer.email_address || `Volunteer ${volunteer.id}`
-        const classId = volunteer.assigned_class_id || volunteer.class_id
+        
+        const rawStatus = (volunteer.status || 'available').toLowerCase()
+        const isPendingReturn = rawStatus === 'requesting_confirmation' || rawStatus === 'pending return' || rawStatus === 'requesting return'
+
+        let classId = ''
+        if (isPendingReturn) {
+          classId = volunteer.assigned_class_id || volunteer.class_id || ''
+        } else {
+          const selectedClassId = selectedClassSelections[volunteer.id]
+          classId = selectedClassId !== undefined ? selectedClassId : (volunteer.assigned_class_id || volunteer.class_id || '')
+        }
+        
         const classItem = classId ? classes.find((entry) => String(entry.id) === String(classId)) : null
         const teacher = classItem ? teacherById.get(String(classItem.teacher_id)) : null
 
@@ -110,16 +131,19 @@ export default function AdminVolunteerPanel() {
           fullName,
           totalHours: volunteer.total_hours || '0.00',
           status: volunteer.status || 'available',
+          isPendingReturn,
           className: classItem?.name || classItem?.class_name || '—',
           teacherName: teacher ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || '—' : '—',
           room: classItem?.room || classItem?.room_name || '—',
           period: classItem?.period || '—',
+          classId: classId ? String(classId) : '',
+          teacherId: classItem?.teacher_id ? String(classItem.teacher_id) : (volunteer.teacher_id ? String(volunteer.teacher_id) : (volunteer.assigned_teacher_id ? String(volunteer.assigned_teacher_id) : '')),
           searchText: normalizeText([fullName, volunteer.status, classItem?.name, classItem?.room, classItem?.period].filter(Boolean).join(' ')),
         }
       })
       .filter((row) => !search || row.searchText.includes(search))
       .slice(0, 8)
-  }, [classes, teacherById, volunteers, searchTerm])
+  }, [classes, teacherById, volunteers, searchTerm, selectedClassSelections])
 
   const filterOptions = useMemo(() => {
     const uniqueValues = (key) => Array.from(new Set(scheduleRows.map((row) => String(row[key] || '').trim()).filter(Boolean))).sort((left, right) => left.localeCompare(right))
@@ -158,6 +182,47 @@ export default function AdminVolunteerPanel() {
       setTeacherScheduleMessage(error?.message || 'Failed to upload teacher schedule.')
     } finally {
       event.target.value = ''
+    }
+  }
+
+  const handleAdminConfirmReturn = async (volunteerId) => {
+    try {
+      if (typeof backend.confirmVolunteerReturn === 'function') {
+        await backend.confirmVolunteerReturn(volunteerId)
+      } else {
+        // Fallback to explicit post request on the backend client if custom method is absent
+        await backend.create(`volunteers/${volunteerId}/confirm-return`, {})
+      }
+      await queryClient.invalidateQueries(['volunteers'])
+    } catch (error) {
+      console.error('Failed to confirm return:', error)
+      alert(error?.message || 'Failed to confirm return.')
+    }
+  }
+
+  const handleSendToTeacher = async (volunteerId, teacherId, classId) => {
+    const selectedClassId = selectedClassSelections[volunteerId] || classId
+    const targetClassObj = selectedClassId ? classes.find(c => String(c.id) === String(selectedClassId)) : null
+
+    const safeTeacherId = Number(targetClassObj?.teacher_id || teacherId) || null
+    const safeClassId = selectedClassId ? Number(selectedClassId) : null
+
+    if (!safeTeacherId || !safeClassId) {
+      alert('Please select a target class and teacher from the dropdown before sending the volunteer.')
+      return
+    }
+
+    try {
+      await backend.sendVolunteerToTeacher({
+        student_id: Number(volunteerId),
+        volunteer_id: Number(volunteerId),
+        teacher_id: Number(safeTeacherId),
+        class_id: Number(safeClassId)
+      })
+      await queryClient.invalidateQueries(['volunteers'])
+    } catch (error) {
+      console.error('Failed to send volunteer to teacher:', error)
+      alert(error?.message || 'Failed to send volunteer to teacher.')
     }
   }
 
@@ -212,7 +277,7 @@ export default function AdminVolunteerPanel() {
           )}
         </div>
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4 rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
             <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-4">
               <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -327,33 +392,97 @@ export default function AdminVolunteerPanel() {
             <div className="mb-3">
               <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Available Volunteers</p>
               <h4 className="text-lg font-medium text-slate-900">Volunteer list</h4>
-              <p className="text-xs text-slate-500">Students currently in the Volunteering class appear here.</p>
+              <p className="text-xs text-slate-500">Select a class/teacher and manage status below.</p>
             </div>
 
             {availableVolunteers.length ? (
               <div className="space-y-3">
-                {availableVolunteers.map((volunteer) => (
-                  <div key={volunteer.id} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-semibold text-slate-900">{volunteer.fullName}</p>
-                        <p className="mt-1 text-xs text-slate-500">Total Hours: {volunteer.totalHours} hrs</p>
-                      </div>
-                      <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Available</span>
-                    </div>
+                {availableVolunteers.map((volunteer) => {
+                  const rawStatus = (volunteer.status || 'available').toLowerCase()
+                  const isAvailable = rawStatus === 'available'
+                  const isPendingReturn = volunteer.isPendingReturn
 
-                    <div className="mt-4 flex gap-2">
-                      <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700 opacity-50">
-                        <LogIn className="h-3.5 w-3.5" />
-                        Confirm return
-                      </button>
-                      <button className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700">
-                        <LogOut className="h-3.5 w-3.5" />
-                        Send to teacher
-                      </button>
+                  return (
+                    <div key={volunteer.id} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-semibold text-slate-900">{volunteer.fullName}</p>
+                          <p className="mt-0.5 text-xs text-slate-500">Total Hours: {volunteer.totalHours} hrs</p>
+                        </div>
+                        <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
+                          {formatStatusLabel(volunteer.status)}
+                        </span>
+                      </div>
+
+                      <div className="space-y-1 pt-1">
+                        <label className="text-[11px] font-medium text-slate-600">
+                          {isPendingReturn ? 'Assigned Class / Teacher (Locked)' : 'Assign Class / Teacher'}
+                        </label>
+                        <select
+                          disabled={isPendingReturn}
+                          value={volunteer.classId}
+                          onChange={(e) => {
+                            const newClassId = e.target.value
+                            setSelectedClassSelections((prev) => ({
+                              ...prev,
+                              [volunteer.id]: newClassId,
+                            }))
+                          }}
+                          className={`w-full rounded-xl border border-slate-300 px-3 py-2 text-xs shadow-sm outline-none transition ${
+                            isPendingReturn 
+                              ? 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-80 select-none' 
+                              : 'bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100'
+                          }`}
+                        >
+                          <option value="">Select class & teacher...</option>
+                          {classes.map((cls) => {
+                            const teacherObj = teacherById.get(String(cls.teacher_id))
+                            const teacherName = teacherObj
+                              ? `${teacherObj.first_name || ''} ${teacherObj.last_name || ''}`.trim() || teacherObj.email_address
+                              : 'Unknown Teacher'
+                            const className = cls.name || cls.class_name || 'Unnamed Class'
+                            const roomNum = cls.room || cls.room_name || '—'
+                            return (
+                              <option key={cls.id} value={cls.id}>
+                                {className} — {teacherName} (Rm: {roomNum})
+                              </option>
+                            )
+                          })}
+                        </select>
+                      </div>
+
+                      <div className="flex gap-2 pt-1">
+                        <button 
+                          type="button"
+                          disabled={!isPendingReturn}
+                          onClick={() => handleAdminConfirmReturn(volunteer.id)}
+                          className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition shadow-sm ${
+                            isPendingReturn 
+                              ? 'bg-emerald-500 text-white hover:bg-emerald-600 cursor-pointer' 
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <LogIn className="h-3.5 w-3.5" />
+                          Confirm return
+                        </button>
+
+                        <button 
+                          type="button"
+                          disabled={!isAvailable}
+                          onClick={() => handleSendToTeacher(volunteer.id, volunteer.teacherId, volunteer.classId)}
+                          className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
+                            isAvailable 
+                              ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 shadow-sm cursor-pointer' 
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
+                          }`}
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Send to teacher
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             ) : (
               <div className="rounded-[20px] border border-dashed border-slate-200 py-10 text-center text-slate-400">

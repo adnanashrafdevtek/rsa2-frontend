@@ -69,5 +69,28 @@ export default {
       method: 'DELETE',
       ...options
     });
+  },
+  // Volunteer lifecycle actions
+  sendVolunteerToTeacher: async (volunteerId, teacherId, classId) => {
+    return request(`/volunteers/${volunteerId}/send`, {
+      method: 'POST',
+      body: JSON.stringify({ teacher_id: teacherId, class_id: classId })
+    });
+  },
+  returnVolunteerFromTeacher: async (volunteerId) => {
+    return request(`/volunteers/${volunteerId}/return`, {
+      method: 'POST'
+    });
+  },
+  confirmVolunteerArrival: async (volunteerId, payload) => {
+    return request(`/volunteers/${volunteerId}/arrive`, {
+      method: 'POST',
+      body: JSON.stringify(payload)
+    });
+  },
+  adminConfirmReturn: async (volunteerId) => {
+    return request(`/volunteers/${volunteerId}/arrive`, {
+      method: 'POST'
+    });
   }
-};
+}
