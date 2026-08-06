@@ -91,7 +91,7 @@ export default function TeacherDashboard() {
             <TabsContent value="students">
                 <StudentsTab />
             </TabsContent>
-            <TabsContent value="volunteers"><VolunteersTab /></TabsContent>
+            <TabsContent value="volunteers"><VolunteersTab currentTeacherId={teacherId} /></TabsContent>
             <TabsContent value="reviews"><ReviewsTab /></TabsContent>
             <TabsContent value="announcements"><AnnouncementsTab announcements={announcements} loading={announcementsLoading && !announcements.length} /></TabsContent>
           </Tabs>

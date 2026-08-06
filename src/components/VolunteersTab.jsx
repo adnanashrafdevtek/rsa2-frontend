@@ -156,11 +156,27 @@ export default function VolunteersTab({ currentTeacherId }) {
   }, [classes, currentTeacherId])
 
   const assignedVolunteers = useMemo(() => {
-    if (!currentTeacherId) return []
+    const teacherScopedStatuses = new Set([
+      'requesting_confirmation',
+      'pending arrival',
+      'pending_arrival',
+      'checked_in',
+      'checked in',
+      'currently volunteering',
+      'returning_confirmation',
+      'pending return',
+      'requesting return',
+    ])
+
+    if (!currentTeacherId) {
+      return volunteers.filter((v) => teacherScopedStatuses.has(normalizeText(v.status || '')))
+    }
+
     return volunteers.filter((v) => {
+      const normalizedStatus = normalizeText(v.status || '')
       const assignedClass = String(v.assigned_class_id || v.class_id || '')
       const assignedTeacher = String(v.teacher_id || v.assigned_teacher_id || '')
-      return teacherClassIds.has(assignedClass) || assignedTeacher === String(currentTeacherId)
+      return teacherClassIds.has(assignedClass) || assignedTeacher === String(currentTeacherId) || teacherScopedStatuses.has(normalizedStatus)
     })
   }, [volunteers, teacherClassIds, currentTeacherId])
 
@@ -276,13 +292,12 @@ export default function VolunteersTab({ currentTeacherId }) {
         {currentTeacherId && (
           <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm md:p-5">
             <div className="mb-4">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Teacher Portal</p>
-              <h3 className="text-xl font-medium text-slate-900">Manage Assigned Volunteers</h3>
-              <p className="text-xs text-slate-500">Confirm incoming volunteer arrivals or send them back when finished.</p>
+              <h3 className="text-3xl font-semibold text-slate-900">All Volunteers</h3>
+              <p className="text-sm text-slate-500">Manage teacher assignments, check-ins, and return confirmations.</p>
             </div>
 
             {assignedVolunteers.length ? (
-              <div className="grid gap-3">
+              <div className="grid gap-3 lg:grid-cols-3">
                 {assignedVolunteers.map((volunteer) => {
                   const rawStatus = (volunteer.status || '').toLowerCase()
                   const isRequestingConfirmation = rawStatus === 'requesting_confirmation' || rawStatus === 'pending arrival' || rawStatus === 'pending_arrival'
@@ -291,39 +306,58 @@ export default function VolunteersTab({ currentTeacherId }) {
                   const fullName = volunteer.name || `${volunteer.first_name || ''} ${volunteer.last_name || ''}`.trim() || `Volunteer ${volunteer.id}`
 
                   return (
-                    <div key={volunteer.id} className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-[20px] border border-slate-200 bg-slate-50/50 p-4 shadow-sm">
-                      <div>
-                        <p className="font-semibold text-slate-900">{fullName}</p>
-                        <p className="text-xs text-slate-500 capitalize">Status: {formatStatusLabel(volunteer.status)}</p>
-                        <p className="text-xs text-slate-400 mt-0.5">Total Logged Hours: {volunteer.total_hours || '0.00'} hrs</p>
+                    <div key={volunteer.id} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
+                      <div className="flex items-start gap-3">
+                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-amber-50 text-amber-500">
+                          <HeartHandshake className="h-4 w-4" />
+                        </span>
+                        <div className="min-w-0">
+                          <p className="truncate text-[30px] font-semibold leading-none text-slate-900">{fullName}</p>
+                          <p className="mt-1 text-sm font-medium text-slate-500">Total Hours: {Number(volunteer.total_hours || 0).toFixed(2)} hrs</p>
+                        </div>
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        {isRequestingConfirmation && (
-                          <button
-                            type="button"
-                            onClick={() => handleConfirmArrival(volunteer.id)}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-teal-600 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-teal-700 cursor-pointer"
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            Confirm Arrival (Teacher Action)
-                          </button>
-                        )}
+                      <div className="mt-4 flex items-center justify-between">
+                        <span className="text-xs font-semibold text-slate-500">Status:</span>
+                        <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                          isRequestingConfirmation
+                            ? 'bg-amber-100 text-amber-700'
+                            : isCurrentlyVolunteering
+                              ? 'bg-teal-100 text-teal-700'
+                              : 'bg-slate-100 text-slate-600'
+                        }`}>
+                          {isRequestingConfirmation ? 'Pending Confirmation' : formatStatusLabel(volunteer.status)}
+                        </span>
+                      </div>
 
-                        {isCurrentlyVolunteering && (
-                          <button
-                            type="button"
-                            onClick={() => handleReturnFromTeacher(volunteer.id)}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-600 cursor-pointer"
-                          >
-                            <RotateCcw className="h-4 w-4" />
-                            Send Back to Class
-                          </button>
-                        )}
+                      <div className="mt-4 grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          disabled={!isRequestingConfirmation}
+                          onClick={() => handleConfirmArrival(volunteer.id)}
+                          className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                            isRequestingConfirmation
+                              ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200'
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <CheckCircle2 className="h-4 w-4" />
+                          Check In
+                        </button>
 
-                        {!isRequestingConfirmation && !isCurrentlyVolunteering && (
-                          <span className="text-xs font-medium text-slate-400 italic">No action needed</span>
-                        )}
+                        <button
+                          type="button"
+                          disabled={!isCurrentlyVolunteering}
+                          onClick={() => handleReturnFromTeacher(volunteer.id)}
+                          className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${
+                            isCurrentlyVolunteering
+                              ? 'bg-rose-100 text-rose-700 hover:bg-rose-200'
+                              : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                          Send Back
+                        </button>
                       </div>
                     </div>
                   )
