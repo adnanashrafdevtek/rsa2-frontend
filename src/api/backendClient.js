@@ -69,36 +69,5 @@ export default {
       method: 'DELETE',
       ...options
     });
-  },
-  // Volunteer lifecycle actions
-  sendVolunteerToTeacher: async (volunteerId, teacherId, classId) => {
-    return request('/volunteerHours/check-out', {
-      method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, teacher_id: teacherId, class_id: classId })
-    });
-  },
-  returnVolunteerFromTeacher: async (volunteerId) => {
-    return request('/volunteerHours/check-out', {
-      method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId })
-    });
-  },
-  confirmVolunteerArrival: async (volunteerId, payload) => {
-    return request('/volunteerHours/check-in', {
-      method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, ...(payload || {}) })
-    });
-  },
-  adminConfirmReturn: async (volunteerId, payload) => {
-    return request('/volunteerHours/check-in', {
-      method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, ...(payload || {}) })
-    });
-  },
-  confirmVolunteerReturn: async (volunteerId, payload) => {
-    return request('/volunteerHours/check-in', {
-      method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, ...(payload || {}) })
-    });
   }
-}
+};
