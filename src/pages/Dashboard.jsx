@@ -291,13 +291,11 @@ function ResourcePanel({ resource, resourceMeta }) {
       }
     })
     setFilters(nextFilters)
-    setSelectedRow(null)
   }
 
   const clearFilters = () => {
     setDraftValues({})
     setFilters({})
-    setSelectedRow(null)
   }
 
   const isAdmin = adminMode === 'Admin'
@@ -350,6 +348,32 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
+  const handleClassSpreadsheetUpload = async (event) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+  
+    if (!isAdmin) {
+      setActionMessage('Only admin users can import classes.')
+      return
+    }
+  
+    try {
+      const arrayBuffer = await file.arrayBuffer()
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
+      const result = await backend.create('classes/import-csv', { file_data: base64, file_name: file.name })
+  
+      const inserted = result?.insertedCount ?? 0
+      const errorText = result?.errors?.length
+        ? ` Errors: ${result.errors.map((e) => `Row ${e.index}: ${e.message}`).join(' | ')}`
+        : ''
+      setActionMessage(`Imported ${inserted} class${inserted === 1 ? '' : 'es'}.${errorText}`)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    } finally {
+      event.target.value = ''
+    }
+  }
   const handleEditClass = (classItem) => {
     setEditingClassId(classItem.id)
     setClassForm({
@@ -363,6 +387,22 @@ function ResourcePanel({ resource, resourceMeta }) {
     setSelectedStudentIds([])
     setShowClassForm(true)
     setAdminAction('classes')
+  }
+
+  const handleDeleteClass = async (id) => {
+    if (!isAdmin) {
+      setActionMessage('Only admin users can delete classes.')
+      return
+    }
+    if (!window.confirm('Are you sure you want to delete this class?')) return
+
+    try {
+      await backend.remove('classes', id)
+      setActionMessage('Class deleted successfully.')
+      await refetch()
+    } catch (error) {
+      setActionMessage(error.message)
+    }
   }
 
   const handleCreateEvent = async (event) => {
@@ -478,34 +518,6 @@ function ResourcePanel({ resource, resourceMeta }) {
     }
   }
 
-  const handleStudentSelection = (event) => {
-    const values = Array.from(event.target.selectedOptions, (option) => option.value)
-    setSelectedStudentIds(values)
-  }
-
-  const handleAssignRole = async (roleId) => {
-    if (!currentUserId) {
-      setActionMessage('Select a user before assigning a role.')
-      return
-    }
-
-    const targetUser = userOptions.find((user) => String(user.id) === String(currentUserId))
-    const selectedRole = roleOptions.find((role) => String(role.id) === String(roleId))
-
-    if (!selectedRole) {
-      setActionMessage('Select a valid role.')
-      return
-    }
-
-    try {
-      await backend.update('users', currentUserId, { role_id: Number(roleId) }, { userRole: 'Admin' })
-      setActionMessage(`Assigned ${selectedRole.name} role to ${targetUser ? `${targetUser.first_name} ${targetUser.last_name}` : 'the selected user'}.`)
-      await Promise.all([refetchUsers(), refetchRoles(), refetch()])
-    } catch (submissionError) {
-      setActionMessage(submissionError.message)
-    }
-  }
-
   const handleChangeUserRole = async (user, nextRoleName) => {
     if (!nextRoleName) return
 
@@ -529,27 +541,12 @@ function ResourcePanel({ resource, resourceMeta }) {
     return matchedRole || rawRoleName || 'Unassigned'
   }
 
-  const handleDeleteUser = async (user) => {
-    const label = `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`
-    if (!window.confirm(`Completely remove ${label} from the system?`)) return
-
-    try {
-      await backend.remove('users', user.id, { userRole: 'Admin' })
-      setActionMessage(`Removed ${label} completely.`)
-      await Promise.all([refetchUsers(), refetchRoles(), refetch()])
-    } catch (submissionError) {
-      setActionMessage(submissionError.message)
-    }
-  }
-
-  // Volunteers gets its own dedicated UI for admin management.
   if (resource === 'volunteers') {
     return <AdminVolunteerPanel />
   }
   if (resource === 'reviews') {
     return <ReviewsTab />
   }
-  
 
   return (
     <div className="space-y-6">
@@ -633,18 +630,6 @@ function ResourcePanel({ resource, resourceMeta }) {
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <span className="font-medium text-slate-700">Recipients</span>
-                    <label className="inline-flex items-center gap-2 text-sm text-slate-600">
-                      <input
-                        type="checkbox"
-                        checked={selectAllTeachers}
-                        onChange={(event) => {
-                          const checked = event.target.checked
-                          setSelectAllTeachers(checked)
-                          setAnnouncementRecipientIds(checked ? teacherOptions.map((teacher) => String(teacher.id)) : [])
-                        }}
-                      />
-                      Select all teachers
-                    </label>
                   </div>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {teacherOptions.map((teacher) => {
@@ -830,18 +815,25 @@ function ResourcePanel({ resource, resourceMeta }) {
         </form>
       </div>
 
-
       {resource === 'classes' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="font-semibold text-slate-900">Classes</h3>
-              <p className="mt-1 text-sm text-slate-500">Create, edit, and manage classes from this panel.</p>
+              <p className="mt-1 text-sm text-slate-500">Edit, manage, and import classes from this panel.</p>
             </div>
-            <button type="button" onClick={openCreateClassForm} className="inline-flex items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700" disabled={!isAdmin}>
-              <Plus className="h-4 w-4" />
-              Create class
-            </button>
+            
+            <label className="relative inline-flex cursor-pointer items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+              <Upload className="h-4 w-4" />
+              <span>Import Classes (CSV/Excel)</span>
+              <input 
+                type="file" 
+                accept=".csv,.xlsx,.xls" 
+                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
+                onChange={handleClassSpreadsheetUpload} 
+                disabled={!isAdmin} 
+              />
+            </label>
           </div>
 
           {actionMessage && (
@@ -897,13 +889,11 @@ function ResourcePanel({ resource, resourceMeta }) {
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
                 <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
-                  {editingClassId ? 'Save changes' : 'Create class'}
+                  Save changes
                 </button>
-                {editingClassId && (
-                  <button type="button" onClick={resetClassForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
-                    Cancel
-                  </button>
-                )}
+                <button type="button" onClick={resetClassForm} className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50">
+                  Cancel
+                </button>
               </div>
             </form>
           )}
@@ -928,7 +918,7 @@ function ResourcePanel({ resource, resourceMeta }) {
                       <div className="text-sm text-slate-600">Time: {timeName}</div>
                       <div className="text-sm text-slate-600">Grade: {row.grade_level || '—'}</div>
                     </div>
-                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
                       <button
                         type="button"
                         onClick={() => handleEditClass(row)}
@@ -970,43 +960,43 @@ function ResourcePanel({ resource, resourceMeta }) {
             </button>
           </div>
 
-        {isLoading ? (
-          <div className="p-6 text-slate-500">Loading...</div>
-        ) : error ? (
-          <div className="p-6 text-red-600">Error: {String(error.message)}</div>
-        ) : visibleRows.length === 0 ? (
-          <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
-        ) : (
-          <ScheduleTable
-            columns={resourceMeta.fields}
-            rows={visibleRows}
-            emptyMessage="No rows found for this resource."
-            renderCell={resource === 'users' ? (row, column) => {
-              if (column.key !== 'role_id') {
-                return null
-              }
+          {isLoading ? (
+            <div className="p-6 text-slate-500">Loading...</div>
+          ) : error ? (
+            <div className="p-6 text-red-600">Error: {String(error.message)}</div>
+          ) : visibleRows.length === 0 ? (
+            <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
+          ) : (
+            <ScheduleTable
+              columns={resourceMeta.fields}
+              rows={visibleRows}
+              emptyMessage="No rows found for this resource."
+              renderCell={resource === 'users' ? (row, column) => {
+                if (column.key !== 'role_id') {
+                  return null
+                }
 
-              const currentRoleName = getUserRoleLabel(row)
+                const currentRoleName = getUserRoleLabel(row)
 
-              return (
-                <select
-                  value={USER_ROLE_OPTIONS.includes(currentRoleName) ? currentRoleName : ''}
-                  onChange={(event) => handleChangeUserRole(row, event.target.value)}
-                  className="min-w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-0 focus:border-teal-500"
-                  disabled={!isAdmin}
-                >
-                  <option value="">Select role</option>
-                  {USER_ROLE_OPTIONS.map((roleName) => (
-                    <option key={roleName} value={roleName}>
-                      {roleName}
-                    </option>
-                  ))}
-                </select>
-              )
-            } : undefined}
-          />
-        )}
-      </div>
+                return (
+                  <select
+                    value={USER_ROLE_OPTIONS.includes(currentRoleName) ? currentRoleName : ''}
+                    onChange={(event) => handleChangeUserRole(row, event.target.value)}
+                    className="min-w-40 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 outline-none ring-0 focus:border-teal-500"
+                    disabled={!isAdmin}
+                  >
+                    <option value="">Select role</option>
+                    {USER_ROLE_OPTIONS.map((roleName) => (
+                      <option key={roleName} value={roleName}>
+                        {roleName}
+                      </option>
+                    ))}
+                  </select>
+                )
+              } : undefined}
+            />
+          )}
+        </div>
       )}
     </div>
   )
