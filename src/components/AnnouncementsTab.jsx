@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Bell, Calendar } from 'lucide-react';
+import { BASE } from '../api/backendClient';
 
 export default function AnnouncementsTab({ announcements, loading = false, title = 'Recent Announcements', emptyMessage = 'No announcements at this time.' }) {
   const [fetchedAnnouncements, setFetchedAnnouncements] = useState([]);
@@ -10,7 +11,7 @@ export default function AnnouncementsTab({ announcements, loading = false, title
       return undefined;
     }
 
-    fetch('/announcements')
+    fetch(`${BASE}/announcements`)
       .then(res => res.json())
       .then(data => {
         setFetchedAnnouncements(data.mysqlResult || data);

@@ -1,4 +1,6 @@
-const BASE = (import.meta.env.VITE_BACKEND_BASE || '').replace(/\/$/, '');
+// Backend origin from .env (VITE_BACKEND_BASE). Empty means relative URLs,
+// which the Vite dev proxy forwards to the local backend.
+export const BASE = (import.meta.env.VITE_BACKEND_BASE || '').replace(/\/$/, '');
 
 function buildQuery(params = {}) {
   const qs = new URLSearchParams();

@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import backend from '../api/backendClient'
+import backend, { BASE } from '../api/backendClient'
 
 export default function ExcelUploadPage() {
   const [selectedFile, setSelectedFile] = useState(null)
@@ -29,7 +29,7 @@ export default function ExcelUploadPage() {
     } catch (err) {
       const message = err?.message || 'Upload failed'
       if (message.toLowerCase().includes('failed to fetch')) {
-        setError('Upload failed: backend appears unreachable. Ensure the backend is running and reachable at http://localhost:3000')
+        setError(`Upload failed: backend appears unreachable. Ensure the backend is running and reachable at ${BASE || window.location.origin}`)
       } else {
         setError(message)
       }

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Bell, Calendar, MapPin, Megaphone, AlertCircle } from 'lucide-react'
+import { BASE } from '../api/backendClient'
 
 export default function Annoucements() {
   const [announcements, setAnnouncements] = useState([])
@@ -11,7 +12,7 @@ export default function Annoucements() {
       try {
         setLoading(true)
         // Fetch from your announcements endpoint
-        const res = await fetch('/announcements')
+        const res = await fetch(`${BASE}/announcements`)
         if (!res.ok) throw new Error('Failed to fetch announcements')
         
         const data = await res.json()

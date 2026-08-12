@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Star, Plus, X } from 'lucide-react';
+import { BASE } from '../api/backendClient';
 
 export default function ReviewsTab() {
   const [reviews, setReviews] = useState([]);
@@ -12,7 +13,7 @@ export default function ReviewsTab() {
   const [submitting, setSubmitting] = useState(false);
 
   const fetchReviews = () => {
-    fetch('http://localhost:3000/reviews')
+    fetch(`${BASE}/reviews`)
       .then(res => res.json())
       .then(data => {
         setReviews(data.mysqlResult || data);
@@ -35,7 +36,7 @@ export default function ReviewsTab() {
     const currentUserId = localStorage.getItem('planner-current-user-id') || 1;
 
     try {
-      const response = await fetch('http://localhost:3000/reviews', {
+      const response = await fetch(`${BASE}/reviews`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

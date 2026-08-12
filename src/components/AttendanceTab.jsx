@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BASE } from '../api/backendClient';
 
 export default function AttendanceTab() {
   const [classes, setClasses] = useState([]);
@@ -9,7 +10,7 @@ export default function AttendanceTab() {
 
   // 1. Fetch classes and users mapping on component load
   useEffect(() => {
-    fetch('/classes')
+    fetch(`${BASE}/classes`)
       .then(res => res.json())
       .then(data => {
         const classList = data.mysqlResult || data.data || data;
@@ -23,7 +24,7 @@ export default function AttendanceTab() {
       .catch(err => console.error('Error fetching classes:', err));
 
     // Fetch users so we can map user_iduser to actual first/last names
-    fetch('/users')
+    fetch(`${BASE}/users`)
       .then(res => res.json())
       .then(data => {
         const userList = data.mysqlResult || data.data || data;
@@ -46,7 +47,7 @@ export default function AttendanceTab() {
     }
     
     setLoading(true);
-    fetch(`/student_classes?class_idclass=${selectedClassId}`)
+    fetch(`${BASE}/student_classes?class_idclass=${selectedClassId}`)
       .then(res => res.json())
       .then(data => {
         const studentList = data.mysqlResult || data.data || data;

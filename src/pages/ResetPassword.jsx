@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { BASE } from '../api/backendClient';
 
 export default function ResetPassword() {
   const [step, setStep] = useState(1); // 1 = Request, 2 = Reset
@@ -10,7 +11,7 @@ export default function ResetPassword() {
 
   const handleRequest = async (e) => {
     e.preventDefault();
-    const res = await fetch('http://localhost:3000/api/request-reset', {
+    const res = await fetch(`${BASE}/api/request-reset`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email }),
@@ -26,7 +27,7 @@ export default function ResetPassword() {
 
   const handleReset = async (e) => {
     e.preventDefault();
-    const res = await fetch('http://localhost:3000/api/reset-password', {
+    const res = await fetch(`${BASE}/api/reset-password`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, token, newPassword }),

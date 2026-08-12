@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BASE } from '../api/backendClient';
 
 export default function MyClassesTab() {
   const [classes, setClasses] = useState([]);
@@ -6,7 +7,7 @@ export default function MyClassesTab() {
 
   useEffect(() => {
     // Query classes filtered by the teacher ID just like the dashboard expects
-    fetch('/classes?teacher_id=2')
+    fetch(`${BASE}/classes?teacher_id=2`)
       .then(res => res.json())
       .then(data => {
         const classList = data.mysqlResult || data.data || data;
