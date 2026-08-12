@@ -10,7 +10,8 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 80,
+    host: true,
     proxy: {
       '/users': 'http://localhost:3000',
       '/user': 'http://localhost:3000',
