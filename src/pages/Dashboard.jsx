@@ -90,6 +90,50 @@ function formatUserName(user) {
   return `${user.first_name || ''} ${user.last_name || ''}`.trim() || user.email_address || `User ${user.id}`
 }
 
+function formatAnnouncementDate(value) {
+  if (!value) return ''
+
+  const rawValue = String(value).trim()
+  const normalized = rawValue.includes('T') ? rawValue.replace(' ', 'T') : rawValue
+  const parsed = new Date(normalized)
+
+  if (Number.isNaN(parsed.getTime())) {
+    return rawValue.split(' ')[0] || rawValue
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(parsed)
+}
+
+function formatAnnouncementTime(value) {
+  if (!value) return ''
+
+  const rawValue = String(value).trim()
+  const normalized = rawValue.includes('T') ? rawValue.replace(' ', 'T') : rawValue
+  const parsed = new Date(normalized)
+
+  if (Number.isNaN(parsed.getTime())) {
+    const match = rawValue.match(/(\d{1,2}):(\d{2})(?::\d{2})?(?:\.\d+)?/)
+    if (match) {
+      const hour24 = Number(match[1])
+      const minute = String(match[2]).padStart(2, '0')
+      const suffix = hour24 >= 12 ? 'PM' : 'AM'
+      const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12
+      return `${hour12}:${minute} ${suffix}`
+    }
+    return rawValue
+  }
+
+  return new Intl.DateTimeFormat('en-US', {
+    hour: 'numeric',
+    minute: '2-digit',
+    hour12: true
+  }).format(parsed)
+}
+
 function normalizeEventDateTime(value) {
   if (!value) return ''
   const text = String(value).trim().replace('T', ' ')
@@ -280,6 +324,31 @@ function ResourcePanel({ resource, resourceMeta }) {
     if (Array.isArray(eventOptionsData)) return eventOptionsData
     return (eventOptionsData && eventOptionsData.mysqlResult) || []
   }, [eventOptionsData])
+
+  const announcementTableColumns = useMemo(() => {
+    if (resource !== 'announcements') return resourceMeta.fields
+    return [
+      { key: 'title', label: 'Title' },
+      { key: 'content', label: 'Content' },
+      { key: 'created_by', label: 'Created By' },
+      { key: 'created_at_date', label: 'Date' },
+      { key: 'created_at_time', label: 'Time' }
+    ]
+  }, [resource, resourceMeta.fields])
+
+  const announcementTableRows = useMemo(() => {
+    if (resource !== 'announcements') return visibleRows
+
+    return visibleRows.map((row) => {
+      const creator = userOptions.find((entry) => String(entry.id) === String(row.created_by))
+      return {
+        ...row,
+        created_by: creator ? formatUserName(creator) : (row.created_by_name || row.created_by || 'Unknown user'),
+        created_at_date: formatAnnouncementDate(row.created_at),
+        created_at_time: formatAnnouncementTime(row.created_at)
+      }
+    })
+  }, [resource, userOptions, visibleRows])
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -968,10 +1037,15 @@ function ResourcePanel({ resource, resourceMeta }) {
             <div className="p-6 text-center text-slate-500">No rows found for this resource.</div>
           ) : (
             <ScheduleTable
-              columns={resourceMeta.fields}
-              rows={visibleRows}
+              columns={announcementTableColumns}
+              rows={resource === 'announcements' ? announcementTableRows : visibleRows}
               emptyMessage="No rows found for this resource."
-              renderCell={resource === 'users' ? (row, column) => {
+              renderCell={resource === 'announcements' ? (row, column) => {
+                if (column.key === 'created_by') return row.created_by || 'Unknown user'
+                if (column.key === 'created_at_date') return row.created_at_date || formatAnnouncementDate(row.created_at)
+                if (column.key === 'created_at_time') return row.created_at_time || formatAnnouncementTime(row.created_at)
+                return null
+              } : resource === 'users' ? (row, column) => {
                 if (column.key !== 'role_id') {
                   return null
                 }
