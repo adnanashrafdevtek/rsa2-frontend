@@ -1,64 +1,5 @@
-import React, { useEffect, useState } from 'react'
-import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, GraduationCap, Upload, ShieldCheck, Settings2, LogOut } from "lucide-react"
-
-function AdminPanel({ adminMode, setAdminMode, adminAction, setAdminAction, isAdmin }) {
-  const handleAdminAction = (nextAction) => {
-    setAdminMode('Admin')
-    setAdminAction(nextAction)
-    if (typeof window !== 'undefined') {
-      const targetPath = nextAction === 'rooms' ? '/rooms' : '/classes'
-      window.location.href = targetPath
-    }
-  }
-
-  return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-slate-800">
-        <ShieldCheck className="h-4 w-4 text-teal-600" />
-        Admin management
-      </div>
-      <p className="mt-1 text-xs text-slate-500">Switch modes and jump to class or room tools from here.</p>
-
-      <div className="mt-3 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setAdminMode('Admin')}
-          className={`flex-1 rounded-lg px-2.5 py-2 text-xs font-medium ${isAdmin ? 'bg-teal-600 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100'}`}
-        >
-          Admin
-        </button>
-        <button
-          type="button"
-          onClick={() => setAdminMode('Teacher')}
-          className={`flex-1 rounded-lg px-2.5 py-2 text-xs font-medium ${!isAdmin ? 'bg-slate-800 text-white' : 'border border-slate-300 bg-white text-slate-600 hover:bg-slate-100'}`}
-        >
-          Teacher
-        </button>
-      </div>
-
-      {isAdmin && (
-        <div className="mt-3 space-y-2">
-          <button
-            type="button"
-            onClick={() => handleAdminAction('classes')}
-            className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${adminAction === 'classes' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
-          >
-            <span>Manage classes</span>
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => handleAdminAction('rooms')}
-            className={`flex w-full items-center justify-between rounded-lg border px-2.5 py-2 text-left text-xs font-medium ${adminAction === 'rooms' ? 'border-teal-200 bg-teal-50 text-teal-700' : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-100'}`}
-          >
-            <span>Manage rooms</span>
-            <Settings2 className="h-3.5 w-3.5" />
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
+import React, { useState } from 'react'
+import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, GraduationCap, Upload, LogOut } from "lucide-react"
 
 export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
@@ -66,27 +7,6 @@ export default function Layout({ children }) {
   // Check role ID (1 = Admin, 2 = Teacher) or fallback to planner-role string
   const storedRoleId = typeof window !== 'undefined' ? window.localStorage.getItem('planner-current-role-id') : null;
   const isActualAdmin = storedRoleId ? Number(storedRoleId) === 1 : false;
-
-  const [adminMode, setAdminMode] = useState(() => {
-    if (typeof window === 'undefined') return 'Teacher'
-    if (storedRoleId) {
-      return Number(storedRoleId) === 1 ? 'Admin' : 'Teacher';
-    }
-    return window.localStorage.getItem('planner-role') || 'Teacher'
-  })
-  
-  const [adminAction, setAdminAction] = useState(() => {
-    if (typeof window === 'undefined') return 'classes'
-    return window.localStorage.getItem('planner-admin-action') || 'classes'
-  })
-
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      window.localStorage.setItem('planner-role', adminMode)
-      window.localStorage.setItem('planner-admin-action', adminAction)
-      window.dispatchEvent(new Event('planner-admin-state-changed'))
-    }
-  }, [adminMode, adminAction])
 
   // Define navigation items with strict separation flags
   const allNavItems = [
@@ -105,8 +25,6 @@ export default function Layout({ children }) {
     }
     return !item.adminOnly; // Teachers see everything except admin-only views
   });
-
-  const isAdmin = adminMode === 'Admin'
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-slate-50">
@@ -138,18 +56,6 @@ export default function Layout({ children }) {
                   <Icon className="w-4.5 h-4.5 text-slate-400" />
                   {item.label}
                 </a>
-                {/* Only render AdminPanel if user has role_id 1 */}
-                {item.id === 'profile' && isActualAdmin && (
-                  <div className="mt-4 px-1">
-                    <AdminPanel
-                      adminMode={adminMode}
-                      setAdminMode={setAdminMode}
-                      adminAction={adminAction}
-                      setAdminAction={setAdminAction}
-                      isAdmin={isAdmin}
-                    />
-                  </div>
-                )}
               </div>
             )
           })}
@@ -185,17 +91,6 @@ export default function Layout({ children }) {
 
         {mobileOpen && (
           <nav className="lg:hidden bg-white border-b border-slate-200 p-3 space-y-1">
-            {isActualAdmin && (
-              <div className="mb-3">
-                <AdminPanel
-                  adminMode={adminMode}
-                  setAdminMode={setAdminMode}
-                  adminAction={adminAction}
-                  setAdminAction={setAdminAction}
-                  isAdmin={isAdmin}
-                />
-              </div>
-            )}
             {nav.map(item => {
               const Icon = item.icon
               return (
