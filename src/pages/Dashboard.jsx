@@ -341,18 +341,23 @@ function ResourcePanel({ resource, resourceMeta }) {
   }, [resource, resourceMeta.fields])
 
   const announcementTableRows = useMemo(() => {
-    if (resource !== 'announcements') return visibleRows
+  if (resource !== 'announcements') return visibleRows
 
-    return visibleRows.map((row) => {
-      const creator = userOptions.find((entry) => String(entry.id) === String(row.created_by))
-      return {
-        ...row,
-        created_by: creator ? formatUserName(creator) : (row.created_by_name || row.created_by || 'Unknown user'),
-        created_at_date: formatAnnouncementDate(row.created_at),
-        created_at_time: formatAnnouncementTime(row.created_at)
-      }
-    })
-  }, [resource, userOptions, visibleRows])
+  return visibleRows.map((row) => {
+    const creator = userOptions.find(
+      (entry) => String(entry.id) === String(row.created_by)
+    )
+
+    return {
+      ...row,
+      created_by:
+        row.created_by_name ||
+        (creator ? formatUserName(creator) : 'Unknown user'),
+      created_at_date: formatAnnouncementDate(row.created_at),
+      created_at_time: formatAnnouncementTime(row.created_at)
+    }
+  })
+}, [resource, userOptions, visibleRows])
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -532,6 +537,11 @@ function ResourcePanel({ resource, resourceMeta }) {
       return
     }
 
+    if (!currentUserId) {
+      setActionMessage('Unable to determine the current admin user. Please log in again.')
+      return
+    }
+
     if (!announcementForm.title.trim() || !announcementForm.content.trim()) {
       setActionMessage('Title and content are required.')
       return
@@ -546,7 +556,7 @@ function ResourcePanel({ resource, resourceMeta }) {
       await backend.create('announcements', {
         title: announcementForm.title.trim(),
         content: announcementForm.content.trim(),
-        created_by: Number(currentUserId || 1),
+        created_by: Number(currentUserId),
         target_all: selectAllTeachers ? 1 : 0,
         teacher_ids: selectAllTeachers ? [] : announcementRecipientIds.map((id) => Number(id))
       })
