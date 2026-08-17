@@ -125,6 +125,8 @@ function ResourcePanel({ resource, resourceMeta }) {
   const [selectedStudentScheduleId, setSelectedStudentScheduleId] = useState('')
   const [showEventForm, setShowEventForm] = useState(false)
   const [showAnnouncementForm, setShowAnnouncementForm] = useState(false)
+  const [clubForm, setClubForm] = useState({ name: '', description: '' })
+  const [showClubForm, setShowClubForm] = useState(false)
   const [adminAction, setAdminAction] = useState(() => {
     if (typeof window === 'undefined') return 'classes'
     return window.localStorage.getItem('planner-admin-action') || 'classes'
@@ -161,6 +163,8 @@ function ResourcePanel({ resource, resourceMeta }) {
     setAnnouncementRecipientIds([])
     setSelectAllTeachers(false)
     setEventForm({ name: '', description: '', room: '', date: '' })
+    setClubForm({ name: '', description: '' })
+    setShowClubForm(false)
     setShowEventForm(false)
     setAdminAction(resource === 'classes' ? 'classes' : null)
   }, [resource])
@@ -427,7 +431,31 @@ function ResourcePanel({ resource, resourceMeta }) {
       setActionMessage(submissionError.message)
     }
   }
+  const handleCreateClub = async (event) => {
+    event.preventDefault()
+    if (!isAdmin) {
+      setActionMessage('Only admin users can create clubs.')
+      return
+    }
 
+    if (!clubForm.name.trim()) {
+      setActionMessage('Club name is required.')
+      return
+    }
+
+    try {
+      await backend.create('clubs', {
+        name: clubForm.name.trim(),
+        description: clubForm.description.trim()
+      })
+      setActionMessage('Club created successfully.')
+      setClubForm({ name: '', description: '' })
+      setShowClubForm(false)
+      await refetch()
+    } catch (submissionError) {
+      setActionMessage(submissionError.message)
+    }
+  }
   const handleCreateAnnouncement = async (event) => {
     event.preventDefault()
     if (!isAdmin) {
@@ -598,7 +626,61 @@ function ResourcePanel({ resource, resourceMeta }) {
           </div>
         </div>
       )}
+      {resource === 'clubs' && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="font-semibold text-slate-900">Clubs</h3>
+              <p className="mt-1 text-sm text-slate-500">Create and manage clubs students can join.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowClubForm((prev) => !prev)}
+              className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
+              disabled={!isAdmin}
+            >
+              {showClubForm ? 'Cancel' : 'Add club'}
+            </button>
+          </div>
 
+          {showClubForm && (
+            <form onSubmit={handleCreateClub} className="mt-4 rounded-xl border border-slate-200 p-4">
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="space-y-1 text-sm text-slate-600">
+                  <span className="font-medium">Name</span>
+                  <input
+                    value={clubForm.name}
+                    onChange={(event) => setClubForm((prev) => ({ ...prev, name: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="e.g. Chess Club"
+                    required
+                  />
+                </label>
+                <label className="space-y-1 text-sm text-slate-600 md:col-span-2">
+                  <span className="font-medium">Description</span>
+                  <textarea
+                    value={clubForm.description}
+                    onChange={(event) => setClubForm((prev) => ({ ...prev, description: event.target.value }))}
+                    className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="What does this club do?"
+                  />
+                </label>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button type="submit" className="rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                  Add club
+                </button>
+              </div>
+            </form>
+          )}
+
+          {actionMessage && (
+            <div className="mt-4 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2 text-sm text-teal-700">
+              {actionMessage}
+            </div>
+          )}
+        </div>
+      )}
       {resource === 'announcements' && (
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -628,41 +710,62 @@ function ResourcePanel({ resource, resourceMeta }) {
                   <textarea value={announcementForm.content} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, content: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the announcement" required />
                 </label>
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <span className="font-medium text-slate-700">Recipients</span>
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {teacherOptions.map((teacher) => {
-                      const teacherId = String(teacher.id)
-                      const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
-                      const checked = selectAllTeachers || announcementRecipientIds.includes(teacherId)
+  <div className="flex flex-wrap items-center justify-between gap-3">
+    <span className="font-medium text-slate-700">Recipients</span>
+    <label className="flex items-center gap-2 text-sm text-slate-600">
+      <input
+        type="checkbox"
+        checked={selectAllTeachers}
+        onChange={(event) => {
+          const isChecked = event.target.checked
+          setSelectAllTeachers(isChecked)
+          setAnnouncementRecipientIds(isChecked ? teacherOptions.map((teacher) => String(teacher.id)) : [])
+        }}
+      />
+      <span>Select all teachers</span>
+    </label>
+  </div>
+  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+  {teacherOptions.map((teacher) => {
+    const teacherId = String(teacher.id)
+    const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
+    const checked = selectAllTeachers || announcementRecipientIds.includes(teacherId)
 
-                      return (
-                        <label key={teacher.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={(event) => {
-                              const isChecked = event.target.checked
-                              setAnnouncementRecipientIds((prev) => {
-                                const next = new Set(prev)
-                                if (isChecked) {
-                                  next.add(teacherId)
-                                } else {
-                                  next.delete(teacherId)
-                                }
-                                const nextList = Array.from(next)
-                                setSelectAllTeachers(teacherOptions.length > 0 && nextList.length === teacherOptions.length)
-                                return nextList
-                              })
-                            }}
-                            disabled={selectAllTeachers}
-                          />
-                          <span>{teacherName}</span>
-                        </label>
-                      )
-                    })}
-                  </div>
+    return (
+      <label key={teacher.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={checked}
+          onChange={(event) => {
+            const isChecked = event.target.checked
+
+            if (selectAllTeachers) {
+              // Breaking out of "select all" mode: keep everyone checked except the one just unchecked
+              const allIds = teacherOptions.map((t) => String(t.id))
+              const nextList = isChecked ? allIds : allIds.filter((id) => id !== teacherId)
+              setSelectAllTeachers(false)
+              setAnnouncementRecipientIds(nextList)
+              return
+            }
+
+            setAnnouncementRecipientIds((prev) => {
+              const next = new Set(prev)
+              if (isChecked) {
+                next.add(teacherId)
+              } else {
+                next.delete(teacherId)
+              }
+              const nextList = Array.from(next)
+              setSelectAllTeachers(teacherOptions.length > 0 && nextList.length === teacherOptions.length)
+              return nextList
+            })
+          }}
+        />
+        <span>{teacherName}</span>
+      </label>
+    )
+  })}
+</div>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -1005,6 +1108,7 @@ function ResourcePanel({ resource, resourceMeta }) {
 export default function Dashboard({ initialResource = 'users' }) {
   const [activeResource, setActiveResource] = useState(initialResource)
   const activeMeta = RESOURCES.find((resource) => resource.id === activeResource) || RESOURCES[0]
+  const visibleResources = RESOURCES.filter((resource) => resource.id !== 'schedules')
 
   useEffect(() => {
     setActiveResource(initialResource)
@@ -1020,7 +1124,7 @@ export default function Dashboard({ initialResource = 'users' }) {
 
         <Tabs value={activeResource} onValueChange={setActiveResource} className="space-y-6">
           <TabsList className="justify-start">
-            {RESOURCES.map((resource) => {
+            {visibleResources.map((resource) => {
               const Icon = resource.icon
               return (
                 <TabsTrigger key={resource.id} value={resource.id} className="gap-2">
@@ -1030,7 +1134,7 @@ export default function Dashboard({ initialResource = 'users' }) {
             })}
           </TabsList>
 
-          {RESOURCES.map((resource) => (
+          {visibleResources.map((resource) => (
             <TabsContent key={resource.id} value={resource.id}>
               <ResourcePanel resource={resource.id} resourceMeta={resource} />
             </TabsContent>
