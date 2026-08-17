@@ -26,7 +26,7 @@ export default function BackendAdmin(){
 
   return (
     <div className="container">
-      <h1>Backend Explorer</h1>
+      <h1>RSA Management</h1>
       <div className="toolbar">
         {RESOURCES.map(r => (
           <button key={r} className={`btn ${r===resource ? 'primary':''}`} onClick={()=>setResource(r)}>

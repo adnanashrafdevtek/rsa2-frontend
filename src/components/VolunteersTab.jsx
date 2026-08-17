@@ -12,6 +12,13 @@ function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
 }
 
+const PERIOD_FILTER_OPTIONS = ['1', '2', '3', '4', '5', '6', '7', '8']
+const DAY_FILTER_OPTIONS = [
+  { value: 'all', label: 'All A-Day/B-day' },
+  { value: 'A-day', label: 'A-day' },
+  { value: 'B-day', label: 'B-day' },
+]
+
 const formatStatusLabel = (status) => {
   if (!status) return 'Available'
   const normalized = status.replace(/[_]/g, ' ').toLowerCase()
@@ -186,9 +193,9 @@ export default function VolunteersTab({ currentTeacherId }) {
       teacherName: uniqueValues('teacherName'),
       className: uniqueValues('className'),
       room: uniqueValues('room'),
-      period: uniqueValues('period'),
+      period: PERIOD_FILTER_OPTIONS,
       time: uniqueValues('time'),
-      day: uniqueValues('day'),
+      day: DAY_FILTER_OPTIONS,
       volunteersAssigned: Array.from(new Set(scheduleRows.map((row) => String(row.volunteersAssigned)).filter(Boolean))).sort((left, right) => Number(left) - Number(right)),
     }
   }, [scheduleRows])
@@ -451,7 +458,7 @@ export default function VolunteersTab({ currentTeacherId }) {
                       <span className="font-medium text-slate-700">Period</span>
                       <select value={periodFilter} onChange={(event) => setPeriodFilter(event.target.value)} className="w-full rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100">
                         <option value="all">All period</option>
-                        {filterOptions.period.map((option) => <option key={option} value={option}>{option}</option>)}
+                        {PERIOD_FILTER_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                       </select>
                     </label>
                     <label className="space-y-1 text-sm text-slate-600">
@@ -464,8 +471,7 @@ export default function VolunteersTab({ currentTeacherId }) {
                     <label className="space-y-1 text-sm text-slate-600">
                       <span className="font-medium text-slate-700">A-day/B-day</span>
                       <select value={dayFilter} onChange={(event) => setDayFilter(event.target.value)} className="w-full rounded-full border border-slate-300 bg-white px-4 py-2.5 text-sm shadow-sm outline-none transition focus:border-slate-400 focus:ring-2 focus:ring-slate-100">
-                        <option value="all">All a-day/b-day</option>
-                        {filterOptions.day.map((option) => <option key={option} value={option}>{option}</option>)}
+                        {DAY_FILTER_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </label>
                     <label className="space-y-1 text-sm text-slate-600">
