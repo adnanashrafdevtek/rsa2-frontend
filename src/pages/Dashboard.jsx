@@ -33,7 +33,6 @@ const RESOURCES = [
     { key: 'title', label: 'Title' },
     { key: 'content', label: 'Content' },
     { key: 'created_by', label: 'Created By' },
-    { key: 'created_at', label: 'Time' },
   ]},
   { id: 'schedules', label: 'Schedules', icon: CalendarDays, fields: [
     { key: 'student_name', label: 'Student Name' },
