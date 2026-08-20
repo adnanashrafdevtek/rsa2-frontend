@@ -4,10 +4,11 @@ import { LayoutDashboard, CalendarDays, Bell, BookOpen, User, Menu, X, Graduatio
 export default function Layout({ children }) {
   const [mobileOpen, setMobileOpen] = useState(false)
   
-  // Check role ID (1 = Admin, 2 = Teacher) or fallback to planner-role string
+  // Check role ID: 1 = Admin, 2 = Teacher, 3 = Student/Volunteer
   const storedRoleId = typeof window !== 'undefined' ? window.localStorage.getItem('planner-current-role-id') : null;
-  const isActualAdmin = storedRoleId ? Number(storedRoleId) === 1 : false;
-
+  const isActualAdmin = storedRoleId
+  ? Number(storedRoleId) === 1
+  : false;
   // Define navigation items with strict separation flags
   const allNavItems = [
     { label: "Dashboard", icon: LayoutDashboard, id: "dashboard", href: "/", adminOnly: true },
@@ -38,7 +39,7 @@ export default function Layout({ children }) {
             <div>
               <h1 className="font-bold text-slate-800 text-lg leading-tight">Frontend</h1>
               <p className="text-[10px] font-medium text-teal-600 uppercase tracking-wider">
-                {isActualAdmin ? 'ADMIN' : 'TEACHER'}
+                {Number(storedRoleId) === 3 ? 'STUDENT' : isActualAdmin ? 'ADMIN' : 'TEACHER'}
               </p>
             </div>
           </div>

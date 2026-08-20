@@ -73,34 +73,54 @@ export default {
     });
   },
   // Volunteer lifecycle actions
-  sendVolunteerToTeacher: async (volunteerId, teacherId, classId) => {
+  sendVolunteerToTeacher: async (studentId, teacherId, classId, assignedBy = null) => {
+    return request('/volunteerHours/send', {
+      method: 'POST',
+      body: JSON.stringify({
+        student_id: Number(studentId),
+        teacher_id: Number(teacherId),
+        class_id: Number(classId),
+        ...(assignedBy ? { assigned_by: Number(assignedBy) } : {})
+      })
+    });
+  },
+
+  returnVolunteerFromTeacher: async (studentId) => {
     return request('/volunteerHours/check-out', {
       method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, teacher_id: teacherId, class_id: classId })
+      body: JSON.stringify({
+        student_id: Number(studentId)
+      })
     });
   },
-  returnVolunteerFromTeacher: async (volunteerId) => {
-    return request('/volunteerHours/check-out', {
-      method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId })
-    });
-  },
-  confirmVolunteerArrival: async (volunteerId, payload) => {
+
+  confirmVolunteerArrival: async (studentId, payload = {}) => {
     return request('/volunteerHours/check-in', {
       method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, ...(payload || {}) })
+      body: JSON.stringify({
+        student_id: Number(studentId),
+        ...payload
+      })
     });
   },
-  adminConfirmReturn: async (volunteerId, payload) => {
-    return request('/volunteerHours/check-in', {
+
+  adminConfirmReturn: async (studentId, payload = {}) => {
+    return request('/volunteerHours/confirm-return', {
       method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, ...(payload || {}) })
+      body: JSON.stringify({
+        student_id: Number(studentId),
+        ...payload
+      })
     });
   },
-  confirmVolunteerReturn: async (volunteerId, payload) => {
-    return request('/volunteerHours/check-in', {
+
+  confirmVolunteerReturn: async (studentId, payload = {}) => {
+    return request('/volunteerHours/confirm-return', {
       method: 'POST',
-      body: JSON.stringify({ student_id: volunteerId, ...(payload || {}) })
+      body: JSON.stringify({
+        student_id: Number(studentId),
+        ...payload
+      })
     });
-  }
+  },
 }

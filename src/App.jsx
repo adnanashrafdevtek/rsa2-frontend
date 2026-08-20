@@ -33,26 +33,48 @@ const App = () => {
     <BrowserRouter>
       <Routes>
         {/* Login and Reset Password routes are outside Layout */}
-        <Route path="/login" element={user ? <Navigate to="/" /> : <LoginForm onLoginSuccess={handleLogin} />} />
+        <Route
+          path="/login"
+          element={
+            user ? (
+              Number(user.role_id) === 2 ? (
+                <Navigate to="/teacher-dashboard" replace />
+              ) : Number(user.role_id) === 1 ? (
+                <Navigate to="/" replace />
+              ) : (
+                <LoginForm onLoginSuccess={handleLogin} />
+              )
+            ) : (
+              <LoginForm onLoginSuccess={handleLogin} />
+            )
+          }
+        />
         <Route path="/reset-password" element={<ResetPassword />} />
         
         {/* Protected Routes wrapped in Layout */}
-        <Route path="/*" element={user ? (
-          <Layout>
-            <Routes>
-              <Route path="/" element={<Dashboard />} />
-              <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
-              <Route path="/classes" element={<Dashboard initialResource="classes" />} />
-              <Route path="/rooms" element={<Dashboard initialResource="rooms" />} />
-              <Route path="/schedules" element={<Dashboard initialResource="schedules" />} />
-              <Route path="/events" element={<Annoucements />} />
-              <Route path="/announcements" element={<Annoucements />} />
-              <Route path="/profile" element={<ProfilePage />} />
-              <Route path="/admin/upload-excel" element={<ExcelUploadPage />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Routes>
-          </Layout>
-        ) : <Navigate to="/login" />} />
+        <Route
+          path="/*"
+          element={
+            user && [1, 2].includes(Number(user.role_id)) ? (
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Dashboard />} />
+                  <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
+                  <Route path="/classes" element={<Dashboard initialResource="classes" />} />
+                  <Route path="/rooms" element={<Dashboard initialResource="rooms" />} />
+                  <Route path="/schedules" element={<Dashboard initialResource="schedules" />} />
+                  <Route path="/events" element={<Annoucements />} />
+                  <Route path="/announcements" element={<Annoucements />} />
+                  <Route path="/profile" element={<ProfilePage />} />
+                  <Route path="/admin/upload-excel" element={<ExcelUploadPage />} />
+                  <Route path="*" element={<Navigate to="/" replace />} />
+                </Routes>
+              </Layout>
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
       </Routes>
     </BrowserRouter>
   );

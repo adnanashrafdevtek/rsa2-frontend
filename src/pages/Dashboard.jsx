@@ -1141,6 +1141,12 @@ function ResourcePanel({ resource, resourceMeta }) {
             </button>
           </div>
 
+          {resource === 'users' && actionMessage && (
+            <div className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">
+              {actionMessage}
+            </div>
+          )}
+
           {isLoading ? (
             <div className="p-6 text-slate-500">Loading...</div>
           ) : error ? (

@@ -26,19 +26,26 @@ export default function LoginForm({ onLoginSuccess }) {
         localStorage.setItem('planner-current-user-id', data.user.id);
         localStorage.setItem('planner-current-role-id', roleId);
         localStorage.setItem('planner-current-user-name', `${data.user.first_name} ${data.user.last_name}`);
-        localStorage.setItem('planner-role', roleId === 1 ? 'Admin' : 'Teacher');
-        
-        if (onLoginSuccess) {
-          onLoginSuccess(data.user);
-        }
+        localStorage.setItem(
+          'planner-role',
+          roleId === 1 ? 'Admin' : roleId === 2 ? 'Teacher' : ''
+        );
 
-        // Strictly route based on role ID: 1 for Admin (Dashboard), 2 for Teacher (TeacherDashboard)
+        // Only allow Admin and Teacher to log in
         if (roleId === 2) {
+          if (onLoginSuccess) {
+            onLoginSuccess(data.user);
+          }
           navigate('/teacher-dashboard');
         } else if (roleId === 1) {
-          navigate('/'); // Maps to Dashboard.jsx
+          if (onLoginSuccess) {
+            onLoginSuccess(data.user);
+          }
+          navigate('/');
         } else {
-          setError('Unauthorized role type');
+          // Role 3 and any other unauthorized roles
+          localStorage.clear();
+          setError('You are not authorized to access this application.');
         }
         
       } else {

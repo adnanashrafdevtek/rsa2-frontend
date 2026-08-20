@@ -250,11 +250,11 @@ export default function VolunteersTab({ currentTeacherId }) {
     }
 
     try {
-      await backend.sendVolunteerToTeacher({
-        student_id: Number(volunteerId),
-        teacher_id: Number(safeTeacherId),
-        class_id: Number(safeClassId)
-      })
+      await backend.sendVolunteerToTeacher(
+        Number(volunteerId),
+        Number(safeTeacherId),
+        Number(safeClassId)
+      )
       await queryClient.invalidateQueries(['volunteers'])
     } catch (error) {
       console.error('Failed to send volunteer to teacher:', error)
