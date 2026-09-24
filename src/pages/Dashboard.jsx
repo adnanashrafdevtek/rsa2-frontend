@@ -187,7 +187,7 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const { data: userOptionsData, refetch: refetchUsers } = useQuery(['backend', 'profile-users'], () => backend.list('users'), { staleTime: 1000 * 30 })
   const { data: roleOptionsData, refetch: refetchRoles } = useQuery(['backend', 'profile-roles'], () => backend.list('roles'), { staleTime: 1000 * 30 })
-  const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 1 }), { staleTime: 1000 * 30 })
+  const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 2 }), { staleTime: 1000 * 30 })
   const { data: studentOptionsData } = useQuery(['backend', 'students'], () => backend.list('users', { role_id: 3 }), { staleTime: 1000 * 30 })
   const { data: userSchedulesData, refetch: refetchSchedules } = useQuery(['backend', 'user-schedules'], () => backend.list('user_schedules'), { staleTime: 1000 * 30 })
   const { data: classOptionsData } = useQuery(['backend', 'class-options'], () => backend.list('classes'), { staleTime: 1000 * 30 })
@@ -638,6 +638,23 @@ function ResourcePanel({ resource, resourceMeta }) {
       await Promise.all([refetchUsers(), refetchRoles(), refetch()])
     } catch (submissionError) {
       setActionMessage(submissionError.message)
+    }
+  }
+
+  const handleDeleteUser = async (user) => {
+    if (!isAdmin) {
+      setActionMessage('Only admin users can delete users.')
+      return
+    }
+
+    if (!window.confirm(`Delete ${user.first_name || ''} ${user.last_name || ''}`.trim() + '? This cannot be undone.')) return
+
+    try {
+      await backend.remove('users', user.id, { userRole: 'Admin' })
+      setActionMessage('User deleted successfully.')
+      await Promise.all([refetchUsers(), refetch()])
+    } catch (error) {
+      setActionMessage(error?.message || 'Failed to delete user.')
     }
   }
 
@@ -1186,6 +1203,16 @@ function ResourcePanel({ resource, resourceMeta }) {
                   </select>
                 )
               } : undefined}
+              renderActions={resource === 'users' && isAdmin ? (row) => (
+                <button
+                  type="button"
+                  onClick={() => handleDeleteUser(row)}
+                  className="rounded-lg border border-red-200 p-2 text-red-600 transition hover:bg-red-50"
+                  aria-label={`Delete ${row.first_name || 'user'} ${row.last_name || ''}`.trim()}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              ) : undefined}
             />
           )}
         </div>

@@ -85,6 +85,27 @@ export default {
     });
   },
 
+  cancelVolunteerAssignment: async (studentId) => {
+    return request('/volunteerHours/cancel', {
+      method: 'POST',
+      body: JSON.stringify({
+        student_id: Number(studentId)
+      })
+    });
+  },
+
+  adjustVolunteerHours: async (studentId, hours, operation, note = '') => {
+    return request('/volunteerHours/adjust', {
+      method: 'POST',
+      body: JSON.stringify({
+        student_id: Number(studentId),
+        hours: Number(hours),
+        operation,
+        note
+      })
+    });
+  },
+
   returnVolunteerFromTeacher: async (studentId) => {
     return request('/volunteerHours/check-out', {
       method: 'POST',

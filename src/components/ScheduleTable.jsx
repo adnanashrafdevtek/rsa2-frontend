@@ -23,7 +23,7 @@ function normalizeColumns(columns, rows) {
     }))
 }
 
-export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No rows found.', className = '', renderCell }) {
+export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No rows found.', className = '', renderCell, renderActions }) {
   const normalizedColumns = useMemo(() => normalizeColumns(columns, rows), [columns, rows])
 
   if (!rows.length) {
@@ -45,6 +45,7 @@ export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No r
                   {column.label}
                 </th>
               ))}
+              {renderActions && <th className="whitespace-nowrap px-3 py-3 font-medium">Actions</th>}
             </tr>
           </thead>
           <tbody>
@@ -55,6 +56,7 @@ export default function ScheduleTable({ columns, rows = [], emptyMessage = 'No r
                       {renderCell ? renderCell(row, column) ?? String(row[column.key] ?? '') : String(row[column.key] ?? '')}
                   </td>
                 ))}
+                {renderActions && <td className="whitespace-nowrap px-3 py-3 text-slate-600">{renderActions(row)}</td>}
               </tr>
             ))}
           </tbody>

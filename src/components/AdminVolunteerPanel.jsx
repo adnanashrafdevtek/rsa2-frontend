@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { HeartHandshake, LogIn, LogOut } from 'lucide-react'
+import { HeartHandshake, LogIn, LogOut, X } from 'lucide-react'
 import backend from '../api/backendClient'
 
 function getRows(payload) {
@@ -68,12 +68,17 @@ export default function AdminVolunteerPanel() {
   const [nowMs, setNowMs] = useState(Date.now())
 
   const [selectedClassSelections, setSelectedClassSelections] = useState({})
+  const [manualVolunteerId, setManualVolunteerId] = useState('')
+  const [manualHours, setManualHours] = useState('')
+  const [manualOperation, setManualOperation] = useState('add')
+  const [manualNote, setManualNote] = useState('')
+  const [manualAdjustmentMessage, setManualAdjustmentMessage] = useState('')
 
-  const { data: usersData } = useQuery(['users'], () => backend.list('users'), { refetchInterval: 5000 })
+  const { data: teachersData } = useQuery(['teachers'], () => backend.list('users', { role_id: 2 }), { refetchInterval: 5000 })
   const { data: classesData } = useQuery(['classes'], () => backend.list('classes'), { refetchInterval: 5000 })
   const { data: volunteersData } = useQuery(['volunteers'], () => backend.list('volunteers'), { refetchInterval: 5000 })
 
-  const users = useMemo(() => getRows(usersData), [usersData])
+  const teacherUsers = useMemo(() => getRows(teachersData), [teachersData])
   const classes = useMemo(() => getRows(classesData), [classesData])
   const volunteers = useMemo(() => getRows(volunteersData), [volunteersData])
 
@@ -82,14 +87,51 @@ export default function AdminVolunteerPanel() {
     return () => window.clearInterval(intervalId)
   }, [])
 
-  const teacherUsers = useMemo(
-    () => users.filter((user) => Number(user.role_id) === 1 || Number(user.role_id) === 2),
-    [users]
-  )
-
   const teacherById = useMemo(() => {
     return new Map(teacherUsers.map((teacher) => [String(teacher.id), teacher]))
   }, [teacherUsers])
+
+  const teacherOptions = useMemo(() => {
+    const options = []
+    const classesByTeacherId = new Map()
+
+    classes.forEach((classItem) => {
+      const teacherId = String(classItem.teacher_id || '')
+      if (!teacherId) return
+      const teacherClasses = classesByTeacherId.get(teacherId) || []
+      teacherClasses.push(classItem)
+      classesByTeacherId.set(teacherId, teacherClasses)
+    })
+
+    teacherUsers.forEach((teacher) => {
+      const teacherId = String(teacher.id)
+      const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
+      const teacherClasses = classesByTeacherId.get(teacherId) || []
+
+      if (!teacherClasses.length) {
+        options.push({
+          value: `teacher:${teacherId}`,
+          label: `${teacherName} (no class listed)`,
+          teacherId,
+          classId: '',
+        })
+        return
+      }
+
+      teacherClasses.forEach((classItem) => {
+        const className = classItem.name || classItem.class_name || 'Unnamed Class'
+        const roomNum = classItem.room || classItem.room_name || '—'
+        options.push({
+          value: String(classItem.id),
+          label: `${className} — ${teacherName} (Rm: ${roomNum})`,
+          teacherId,
+          classId: String(classItem.id),
+        })
+      })
+    })
+
+    return options
+  }, [classes, teacherUsers])
 
   const volunteerCountByClassId = useMemo(() => {
     const counts = new Map()
@@ -167,11 +209,46 @@ export default function AdminVolunteerPanel() {
     }
   }
 
+  const handleCancelTeacherHandoff = async (studentId) => {
+    try {
+      await backend.cancelVolunteerAssignment(studentId)
+      await queryClient.invalidateQueries(['volunteers'])
+      await queryClient.invalidateQueries(['volunteer_hours'])
+    } catch (error) {
+      console.error('Failed to cancel volunteer assignment:', error)
+      alert(error?.message || 'Failed to cancel volunteer assignment.')
+    }
+  }
+
+  const handleManualHoursAdjustment = async (event) => {
+    event.preventDefault()
+    const hours = Number(manualHours)
+
+    if (!manualVolunteerId || !Number.isFinite(hours) || hours <= 0) {
+      setManualAdjustmentMessage('Select a volunteer and enter a positive number of hours.')
+      return
+    }
+
+    try {
+      await backend.adjustVolunteerHours(manualVolunteerId, hours, manualOperation, manualNote)
+      await queryClient.invalidateQueries(['volunteers'])
+      await queryClient.invalidateQueries(['volunteer_hours'])
+      setManualHours('')
+      setManualNote('')
+      setManualAdjustmentMessage('Hours updated successfully.')
+    } catch (error) {
+      console.error('Failed to adjust volunteer hours:', error)
+      setManualAdjustmentMessage(error?.message || 'Failed to adjust volunteer hours.')
+    }
+  }
+
   const handleSendToTeacher = async (studentId, teacherId, classId, rowId) => {
-    const selectedClassId = selectedClassSelections[rowId] || classId
+    const selectedValue = selectedClassSelections[rowId] || classId
+    const selectedOption = teacherOptions.find((option) => option.value === selectedValue)
+    const selectedClassId = selectedOption?.classId || (String(selectedValue).startsWith('teacher:') ? '' : selectedValue)
     const targetClassObj = selectedClassId ? classes.find(c => String(c.id) === String(selectedClassId)) : null
 
-    const safeTeacherId = Number(targetClassObj?.teacher_id || teacherId) || null
+    const safeTeacherId = Number(targetClassObj?.teacher_id || selectedOption?.teacherId || teacherId) || null
     const safeClassId = selectedClassId ? Number(selectedClassId) : null
 
     if (!safeTeacherId || !safeClassId) {
@@ -242,19 +319,11 @@ export default function AdminVolunteerPanel() {
                             className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs shadow-sm outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
                           >
                             <option value="">Select class & teacher...</option>
-                            {classes.map((cls) => {
-                              const teacherObj = teacherById.get(String(cls.teacher_id))
-                              const teacherName = teacherObj
-                                ? `${teacherObj.first_name || ''} ${teacherObj.last_name || ''}`.trim() || teacherObj.email_address
-                                : 'Unknown Teacher'
-                              const className = cls.name || cls.class_name || 'Unnamed Class'
-                              const roomNum = cls.room || cls.room_name || '—'
-                              return (
-                                <option key={cls.id} value={cls.id}>
-                                  {className} — {teacherName} (Rm: {roomNum})
-                                </option>
-                              )
-                            })}
+                            {teacherOptions.map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
                           </select>
                         </div>
                         <span className="truncate text-xs font-semibold text-emerald-700">{formatStatusLabel(volunteer.status)}</span>
@@ -308,6 +377,17 @@ export default function AdminVolunteerPanel() {
                       <span className="truncate font-semibold text-slate-900">{volunteer.totalHours} hrs</span>
                       <span className="truncate text-xs font-semibold text-amber-700">{formatStatusLabel(volunteer.status)}</span>
                       <div className="flex flex-wrap gap-2">
+                        {volunteer.isRequestingConfirmation && (
+                          <button
+                            type="button"
+                            onClick={() => handleCancelTeacherHandoff(volunteer.studentId)}
+                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-200"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                            Cancel
+                          </button>
+                        )}
+
                         {volunteer.isCheckedIn && (
                           <button
                             type="button"
@@ -336,6 +416,79 @@ export default function AdminVolunteerPanel() {
                   )}
                 </div>
               </div>
+            </div>
+
+            <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
+              <div className="mb-3">
+                <div className="text-sm font-semibold text-slate-900">Manual hour adjustment</div>
+                <div className="text-xs text-slate-500">Add or remove hours without changing automatically calculated check-in hours.</div>
+              </div>
+
+              <form onSubmit={handleManualHoursAdjustment} className="grid gap-3 md:grid-cols-[1.3fr_0.8fr_0.8fr_1.4fr_auto] md:items-end">
+                <label className="block text-xs font-semibold text-slate-600">
+                  Volunteer
+                  <select
+                    value={manualVolunteerId}
+                    onChange={(event) => setManualVolunteerId(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    required
+                  >
+                    <option value="">Select volunteer...</option>
+                    {volunteers.map((volunteer) => (
+                      <option key={volunteer.student_id || volunteer.id} value={volunteer.student_id || volunteer.id}>
+                        {volunteer.fullName || getVolunteerName(volunteer)} ({Number(volunteer.total_hours || 0).toFixed(2)} hrs)
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="block text-xs font-semibold text-slate-600">
+                  Action
+                  <select
+                    value={manualOperation}
+                    onChange={(event) => setManualOperation(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  >
+                    <option value="add">Add hours</option>
+                    <option value="remove">Remove hours</option>
+                  </select>
+                </label>
+
+                <label className="block text-xs font-semibold text-slate-600">
+                  Hours
+                  <input
+                    type="number"
+                    min="0.01"
+                    step="0.01"
+                    value={manualHours}
+                    onChange={(event) => setManualHours(event.target.value)}
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                    required
+                  />
+                </label>
+
+                <label className="block text-xs font-semibold text-slate-600">
+                  Note
+                  <input
+                    type="text"
+                    maxLength="255"
+                    value={manualNote}
+                    onChange={(event) => setManualNote(event.target.value)}
+                    placeholder="Optional reason"
+                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  />
+                </label>
+
+                <button
+                  type="submit"
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+                >
+                  Apply
+                </button>
+              </form>
+              {manualAdjustmentMessage && (
+                <p className="mt-3 text-xs font-medium text-slate-600">{manualAdjustmentMessage}</p>
+              )}
             </div>
           </div>
         </div>
