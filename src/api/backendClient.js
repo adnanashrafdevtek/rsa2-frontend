@@ -38,6 +38,26 @@ export default {
     const json = await request(url);
     return (json && json.mysqlResult) || json;
   },
+
+  // Single source of truth for "is today a Friday at school?".
+  // Returns { status, dayType, baseDayType, ramadanMode, weekday, minutes, timeZone, iso }
+  // dayType is the *effective* schedule (Ramadan already applied).
+  scheduleNow: async () => {
+    return request('/api/schedule-now');
+  },
+
+  // Ramadan mode (admin only for the POST).
+  getRamadanMode: async () => {
+    return request('/api/ramadan-mode');
+  },
+  setRamadanMode: async (enabled) => {
+    return request('/api/ramadan-mode', {
+      method: 'POST',
+      body: JSON.stringify({ enabled: Boolean(enabled) }),
+      userRole: 'Admin',
+    });
+  },
+
   uploadExcelFile: async (fileBuffer, fileName) => {
     return request('/user/import-file', {
       method: 'POST',

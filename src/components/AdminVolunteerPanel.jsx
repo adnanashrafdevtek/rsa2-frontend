@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { HeartHandshake, LogIn, LogOut, X } from 'lucide-react'
-import backend from '../api/backendClient'
+import backend, { BASE } from '../api/backendClient'
 
 function getRows(payload) {
   if (Array.isArray(payload)) return payload
@@ -10,6 +10,34 @@ function getRows(payload) {
 
 function normalizeText(value) {
   return String(value || '').trim().toLowerCase()
+}
+
+// "8:15" -> minutes since midnight. Hours 1-6 are treated as PM (school day is ~7:50 AM - 3:30 PM).
+function parseClockToMinutes(text) {
+  const match = String(text || '').trim().match(/^(\d{1,2}):(\d{2})/)
+  if (!match) return NaN
+  let hour = Number(match[1])
+  const minute = Number(match[2])
+  if (hour >= 1 && hour <= 6) hour += 12
+  return hour * 60 + minute
+}
+
+// timeRange like "8:15-8:55". True when `now` falls inside it.
+function isClassInSession(timeRange, now) {
+  const parts = String(timeRange || '').split(/\s*[-–—]\s*/)
+  if (parts.length !== 2) return false
+  const start = parseClockToMinutes(parts[0])
+  const end = parseClockToMinutes(parts[1])
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return false
+  const current = now.getHours() * 60 + now.getMinutes()
+  return current >= start && current < end
+}
+
+const CUSTOM_OPTION_VALUE = '__custom__'
+
+// Names compare with spaces collapsed and case ignored
+function normalizeName(value) {
+  return String(value || '').trim().replace(/\s+/g, ' ').toLowerCase()
 }
 
 const AVAILABLE_VOLUNTEER_STATUSES = new Set(['available', 'active', '', 'null', 'undefined'])
@@ -74,14 +102,39 @@ export default function AdminVolunteerPanel() {
   const [manualNote, setManualNote] = useState('')
   const [manualAdjustmentMessage, setManualAdjustmentMessage] = useState('')
 
-  const { data: teachersData } = useQuery(['teachers'], () => backend.list('users', { role_id: 2 }), { refetchInterval: 5000 })
-  const { data: classesData } = useQuery(['classes'], () => backend.list('classes'), { refetchInterval: 5000 })
+  // Custom assignment modal: { rowId, studentId } while open, otherwise null
+  const [customModal, setCustomModal] = useState(null)
+  const [customForm, setCustomForm] = useState({ teacher: '', where: '' })
+  const [customSending, setCustomSending] = useState(false)
+  const [customError, setCustomError] = useState('')
+
+  // Ask the server which schedule is in effect (Ramadan-aware).
+  const { data: scheduleNowData } = useQuery(
+    ['schedule-now'],
+    () => backend.scheduleNow(),
+    { refetchInterval: 60000, staleTime: 60000, retry: 0 }
+  )
+
+  const scheduleDayParam = useMemo(() => {
+    const dt = scheduleNowData?.dayType
+    // Weekend falls back to mon-thu; on weekend the in-session filter hides everything anyway.
+    return dt === 'fri' ? 'fri' : 'mon-thu'
+  }, [scheduleNowData])
+
+  // Teacher is role_id 1 in the role table
+  const { data: teachersData } = useQuery(['teachers'], () => backend.list('users', { role_id: 1 }), { refetchInterval: 5000 })
+  const { data: classesData } = useQuery(
+    ['classes', scheduleDayParam],
+    () => backend.list('classes', { schedule_days: scheduleDayParam }),
+    { refetchInterval: 5000 }
+  )
   const { data: volunteersData } = useQuery(['volunteers'], () => backend.list('volunteers'), { refetchInterval: 5000 })
 
   const teacherUsers = useMemo(() => getRows(teachersData), [teachersData])
   const classes = useMemo(() => getRows(classesData), [classesData])
   const volunteers = useMemo(() => getRows(volunteersData), [volunteersData])
 
+  // Ticks every 30s so the "in session" list stays current
   useEffect(() => {
     const intervalId = window.setInterval(() => setNowMs(Date.now()), 30000)
     return () => window.clearInterval(intervalId)
@@ -91,32 +144,36 @@ export default function AdminVolunteerPanel() {
     return new Map(teacherUsers.map((teacher) => [String(teacher.id), teacher]))
   }, [teacherUsers])
 
+  // Exact teacher names offered as suggestions in the custom box
+  const teacherFullNames = useMemo(() => {
+    return teacherUsers
+      .map((teacher) => `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim())
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right))
+  }, [teacherUsers])
+
+  // Only classes that are happening right now, grouped by teacher.
+  // Teachers with no class in session are not listed.
   const teacherOptions = useMemo(() => {
     const options = []
     const classesByTeacherId = new Map()
-
-    classes.forEach((classItem) => {
-      const teacherId = String(classItem.teacher_id || '')
-      if (!teacherId) return
-      const teacherClasses = classesByTeacherId.get(teacherId) || []
-      teacherClasses.push(classItem)
-      classesByTeacherId.set(teacherId, teacherClasses)
-    })
+    const now = new Date(nowMs)
+    classes
+      .filter((classItem) => isClassInSession(classItem.time, now))
+      .forEach((classItem) => {
+        const teacherId = String(classItem.teacher_id || '')
+        if (!teacherId) return
+        const teacherClasses = classesByTeacherId.get(teacherId) || []
+        teacherClasses.push(classItem)
+        classesByTeacherId.set(teacherId, teacherClasses)
+      })
 
     teacherUsers.forEach((teacher) => {
       const teacherId = String(teacher.id)
       const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
       const teacherClasses = classesByTeacherId.get(teacherId) || []
 
-      if (!teacherClasses.length) {
-        options.push({
-          value: `teacher:${teacherId}`,
-          label: `${teacherName} (no class listed)`,
-          teacherId,
-          classId: '',
-        })
-        return
-      }
+      if (!teacherClasses.length) return
 
       teacherClasses.forEach((classItem) => {
         const className = classItem.name || classItem.class_name || 'Unnamed Class'
@@ -131,17 +188,7 @@ export default function AdminVolunteerPanel() {
     })
 
     return options
-  }, [classes, teacherUsers])
-
-  const volunteerCountByClassId = useMemo(() => {
-    const counts = new Map()
-    volunteers.forEach((volunteer) => {
-      const classId = volunteer.assigned_class_id || volunteer.class_id
-      if (!classId) return
-      counts.set(String(classId), (counts.get(String(classId)) || 0) + 1)
-    })
-    return counts
-  }, [volunteers])
+  }, [classes, teacherUsers, nowMs])
 
   const volunteerRows = useMemo(() => {
     return volunteers
@@ -156,19 +203,26 @@ export default function AdminVolunteerPanel() {
         const isAvailable = AVAILABLE_VOLUNTEER_STATUSES.has(status)
         const isCurrent = CURRENT_VOLUNTEER_STATUSES.has(status)
 
+        const customTeacher = String(volunteer.custom_teacher || '').trim()
+        const customLocation = String(volunteer.custom_location || '').trim()
+        const isCustomAssignment = !classItem && (customTeacher || customLocation)
+
         return {
           id: volunteer.id,
           studentId: Number(volunteer.student_id) || Number(volunteer.id),
           fullName,
           totalHours: getVolunteerHours(volunteer, nowMs),
           status: volunteer.status || 'available',
-          className: classItem?.name || classItem?.class_name || '—',
-          teacherName: teacher ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || '—' : '—',
-          room: classItem?.room || classItem?.room_name || '—',
+          className: classItem?.name || classItem?.class_name || (isCustomAssignment ? 'Custom' : '—'),
+          teacherName: teacher
+            ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || '—'
+            : (customTeacher || '—'),
+          room: classItem?.room || classItem?.room_name || customLocation || '—',
           period: classItem?.period || '—',
           classId: classId ? String(classId) : '',
           teacherId,
-          searchText: normalizeText([fullName, volunteer.status, classItem?.name, classItem?.room, classItem?.period, teacher?.first_name, teacher?.last_name].filter(Boolean).join(' ')),
+          isCustomAssignment: Boolean(isCustomAssignment),
+          searchText: normalizeText([fullName, volunteer.status, classItem?.name, classItem?.room, classItem?.period, teacher?.first_name, teacher?.last_name, customTeacher, customLocation].filter(Boolean).join(' ')),
           isAvailable,
           isCurrent,
           isRequestingConfirmation: status === 'requesting_confirmation' || status === 'requesting confirmation' || status === 'pending arrival' || status === 'pending_arrival',
@@ -177,6 +231,7 @@ export default function AdminVolunteerPanel() {
         }
       })
   }, [classes, teacherById, volunteers, nowMs])
+
   const availableVolunteers = useMemo(
     () => volunteerRows.filter((volunteer) => volunteer.isAvailable),
     [volunteerRows]
@@ -187,11 +242,15 @@ export default function AdminVolunteerPanel() {
     [volunteerRows]
   )
 
-    const handleAdminConfirmReturn = async (studentId) => {
+  const refreshVolunteers = async () => {
+    await queryClient.invalidateQueries(['volunteers'])
+    await queryClient.invalidateQueries(['volunteer_hours'])
+  }
+
+  const handleAdminConfirmReturn = async (studentId) => {
     try {
       await backend.adminConfirmReturn(studentId)
-      await queryClient.invalidateQueries(['volunteers'])
-      await queryClient.invalidateQueries(['volunteer_hours'])
+      await refreshVolunteers()
     } catch (error) {
       console.error('Failed to confirm return:', error)
       alert(error?.message || 'Failed to confirm return.')
@@ -201,8 +260,7 @@ export default function AdminVolunteerPanel() {
   const handleSendBackToTeacher = async (studentId) => {
     try {
       await backend.returnVolunteerFromTeacher(studentId)
-      await queryClient.invalidateQueries(['volunteers'])
-      await queryClient.invalidateQueries(['volunteer_hours'])
+      await refreshVolunteers()
     } catch (error) {
       console.error('Failed to send volunteer back:', error)
       alert(error?.message || 'Failed to send volunteer back.')
@@ -212,8 +270,7 @@ export default function AdminVolunteerPanel() {
   const handleCancelTeacherHandoff = async (studentId) => {
     try {
       await backend.cancelVolunteerAssignment(studentId)
-      await queryClient.invalidateQueries(['volunteers'])
-      await queryClient.invalidateQueries(['volunteer_hours'])
+      await refreshVolunteers()
     } catch (error) {
       console.error('Failed to cancel volunteer assignment:', error)
       alert(error?.message || 'Failed to cancel volunteer assignment.')
@@ -231,8 +288,7 @@ export default function AdminVolunteerPanel() {
 
     try {
       await backend.adjustVolunteerHours(manualVolunteerId, hours, manualOperation, manualNote)
-      await queryClient.invalidateQueries(['volunteers'])
-      await queryClient.invalidateQueries(['volunteer_hours'])
+      await refreshVolunteers()
       setManualHours('')
       setManualNote('')
       setManualAdjustmentMessage('Hours updated successfully.')
@@ -246,7 +302,7 @@ export default function AdminVolunteerPanel() {
     const selectedValue = selectedClassSelections[rowId] || classId
     const selectedOption = teacherOptions.find((option) => option.value === selectedValue)
     const selectedClassId = selectedOption?.classId || (String(selectedValue).startsWith('teacher:') ? '' : selectedValue)
-    const targetClassObj = selectedClassId ? classes.find(c => String(c.id) === String(selectedClassId)) : null
+    const targetClassObj = selectedClassId ? classes.find((c) => String(c.id) === String(selectedClassId)) : null
 
     const safeTeacherId = Number(targetClassObj?.teacher_id || selectedOption?.teacherId || teacherId) || null
     const safeClassId = selectedClassId ? Number(selectedClassId) : null
@@ -258,241 +314,380 @@ export default function AdminVolunteerPanel() {
 
     try {
       await backend.sendVolunteerToTeacher(Number(studentId), Number(safeTeacherId), Number(safeClassId))
-      await queryClient.invalidateQueries(['volunteers'])
-      await queryClient.invalidateQueries(['volunteer_hours'])
+      await refreshVolunteers()
     } catch (error) {
       console.error('Failed to send volunteer to teacher:', error)
       alert(error?.message || 'Failed to send volunteer to teacher.')
     }
   }
 
+  const closeCustomModal = () => {
+    setCustomModal(null)
+    setCustomForm({ teacher: '', where: '' })
+    setCustomError('')
+  }
+
+  // Custom reason: free-text teacher + location. Not checked against the user table.
+  const handleSendCustom = async (event) => {
+    event.preventDefault()
+    const teacher = customForm.teacher.trim()
+    const where = customForm.where.trim()
+
+    if (!teacher || !where) {
+      setCustomError('Enter which teacher and where.')
+      return
+    }
+
+    if (teacher.split(/\s+/).length < 2) {
+      setCustomError("Enter the teacher's first and last name.")
+      return
+    }
+
+    // Must be an exact teacher name (case does not matter)
+    const wanted = normalizeName(teacher)
+    const matches = teacherUsers.filter(
+      (entry) => normalizeName(`${entry.first_name || ''} ${entry.last_name || ''}`) === wanted
+    )
+    if (!matches.length) {
+      setCustomError(`No teacher named "${teacher}" was found. Enter the exact first and last name.`)
+      return
+    }
+    if (matches.length > 1) {
+      setCustomError(`More than one teacher is named "${teacher}". Use the class dropdown instead.`)
+      return
+    }
+
+    setCustomError('')
+    setCustomSending(true)
+    try {
+      const response = await fetch(`${BASE}/volunteerHours/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          student_id: Number(customModal.studentId),
+          custom_teacher: teacher,
+          custom_location: where,
+        }),
+      })
+      const result = await response.json().catch(() => ({}))
+      if (!response.ok || result.status === 'error') {
+        throw new Error(result.message || 'Failed to send volunteer.')
+      }
+
+      await refreshVolunteers()
+      closeCustomModal()
+    } catch (error) {
+      console.error('Failed to send volunteer (custom):', error)
+      setCustomError(error?.message || 'Failed to send volunteer.')
+    } finally {
+      setCustomSending(false)
+    }
+  }
+
   return (
     <div className="mx-auto my-6 max-w-6xl rounded-[28px] border border-slate-200 bg-slate-50/70 p-4 shadow-sm md:p-5">
       <div className="space-y-4">
-          <div className="space-y-4 pt-4">
-            <div className="mb-1">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Volunteer Management</p>
-              <h4 className="text-lg font-medium text-slate-900">Available and current volunteers</h4>
-              <p className="text-xs text-slate-500">Available volunteers can be assigned. Current volunteers are already on an active or pending assignment.</p>
+        <div className="space-y-4 pt-4">
+          <div className="mb-1">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Volunteer Management</p>
+            <h4 className="text-lg font-medium text-slate-900">Available and current volunteers</h4>
+            <p className="text-xs text-slate-500">Available volunteers can be assigned. Current volunteers are already on an active or pending assignment.</p>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Available volunteers</div>
+                <div className="text-xs text-slate-500">Students not currently volunteering but able to be assigned. The dropdown shows classes in session right now.</div>
+              </div>
+              <div className="text-xs text-slate-500">{availableVolunteers.length} student{availableVolunteers.length === 1 ? '' : 's'}</div>
             </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Available volunteers</div>
-                  <div className="text-xs text-slate-500">Students not currently volunteering but able to be assigned.</div>
-                </div>
-                <div className="text-xs text-slate-500">{availableVolunteers.length} student{availableVolunteers.length === 1 ? '' : 's'}</div>
+            <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+              <div className="grid grid-cols-[1.05fr_0.75fr_1.1fr_0.9fr_0.85fr] gap-3 border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+                <span>Name</span>
+                <span>Total Hours</span>
+                <span>Assign Class / Teacher</span>
+                <span>Status</span>
+                <span>Action</span>
               </div>
 
-              <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                <div className="grid grid-cols-[1.05fr_0.75fr_1.1fr_0.9fr_0.85fr] gap-3 border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-                  <span>Name</span>
-                  <span>Total Hours</span>
-                  <span>Assign Class / Teacher</span>
-                  <span>Status</span>
-                  <span>Action</span>
-                </div>
+              <div className="divide-y divide-slate-100">
+                {availableVolunteers.length ? availableVolunteers.map((volunteer) => {
+                  const selectedClassId = selectedClassSelections[volunteer.id] || volunteer.classId || ''
+                  const isAvailable = true
 
-                <div className="divide-y divide-slate-100">
-                  {availableVolunteers.length ? availableVolunteers.map((volunteer) => {
-                    const selectedClassId = selectedClassSelections[volunteer.id] || volunteer.classId || ''
-                    const isAvailable = true
-
-                    return (
-                      <div key={volunteer.id} className="grid grid-cols-[1.05fr_0.75fr_1.1fr_0.9fr_0.85fr] gap-3 px-4 py-3 text-sm text-slate-700">
-                        <div>
-                          <p className="font-semibold text-slate-900">{volunteer.fullName}</p>
-                          <p className="text-xs text-slate-500">{volunteer.className !== '—' ? `${volunteer.className} • ${volunteer.teacherName}` : 'No current assignment'}</p>
-                        </div>
-                        <span className="truncate">{volunteer.totalHours} hrs</span>
-                        <div className="min-w-0">
-                          <select
-                            value={selectedClassId}
-                            onChange={(e) => {
-                              const newClassId = e.target.value
-                              setSelectedClassSelections((prev) => ({
-                                ...prev,
-                                [volunteer.id]: newClassId,
-                              }))
-                            }}
-                            className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs shadow-sm outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
-                          >
-                            <option value="">Select class & teacher...</option>
-                            {teacherOptions.map((option) => (
-                              <option key={option.value} value={option.value}>
-                                {option.label}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                        <span className="truncate text-xs font-semibold text-emerald-700">{formatStatusLabel(volunteer.status)}</span>
-                        <button
-                          type="button"
-                          disabled={!isAvailable}
-                          onClick={() => handleSendToTeacher(volunteer.studentId, volunteer.teacherId, volunteer.classId, volunteer.id)}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 cursor-pointer"
-                        >
-                          <LogOut className="h-3.5 w-3.5" />
-                          Send
-                        </button>
-                      </div>
-                    )
-                  }) : (
-                    <div className="px-4 py-10 text-center text-sm text-slate-400">No available volunteers right now.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-slate-900">Current volunteers</div>
-                  <div className="text-xs text-slate-500">Students pending check-in, actively volunteering, or pending return confirmation.</div>
-                </div>
-                <div className="text-xs text-slate-500">{currentVolunteers.length} student{currentVolunteers.length === 1 ? '' : 's'}</div>
-              </div>
-
-              <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
-                <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.75fr_1fr] gap-3 border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
-                  <span>Name</span>
-                  <span>Assignment</span>
-                  <span>Hours</span>
-                  <span>Status</span>
-                  <span>Action</span>
-                </div>
-
-                <div className="divide-y divide-slate-100">
-                  {currentVolunteers.length ? currentVolunteers.map((volunteer) => (
-                    <div key={volunteer.id} className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.75fr_1fr] gap-3 px-4 py-3 text-sm text-slate-700">
+                  return (
+                    <div key={volunteer.id} className="grid grid-cols-[1.05fr_0.75fr_1.1fr_0.9fr_0.85fr] gap-3 px-4 py-3 text-sm text-slate-700">
                       <div>
                         <p className="font-semibold text-slate-900">{volunteer.fullName}</p>
-                        <p className="text-xs text-slate-500">{volunteer.className !== '—' ? `${volunteer.className} • ${volunteer.teacherName}` : 'No class linked'}</p>
+                        <p className="text-xs text-slate-500">{volunteer.className !== '—' ? `${volunteer.className} • ${volunteer.teacherName}` : 'No current assignment'}</p>
                       </div>
+                      <span className="truncate">{volunteer.totalHours} hrs</span>
                       <div className="min-w-0">
-                        <p className="truncate text-slate-700">{volunteer.className}</p>
-                        <p className="truncate text-xs text-slate-500">{volunteer.room} • {volunteer.period}</p>
+                        <select
+                          value={selectedClassId}
+                          onChange={(e) => {
+                            const newValue = e.target.value
+                            if (newValue === CUSTOM_OPTION_VALUE) {
+                              setCustomModal({ rowId: volunteer.id, studentId: volunteer.studentId })
+                              return
+                            }
+                            setSelectedClassSelections((prev) => ({
+                              ...prev,
+                              [volunteer.id]: newValue,
+                            }))
+                          }}
+                          className="w-full rounded-xl border border-slate-300 bg-slate-50 px-3 py-2 text-xs shadow-sm outline-none transition focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100"
+                        >
+                          <option value="">Select class & teacher...</option>
+                          {teacherOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                          <option value={CUSTOM_OPTION_VALUE}>Custom reason…</option>
+                        </select>
                       </div>
-                      <span className="truncate font-semibold text-slate-900">{volunteer.totalHours} hrs</span>
-                      <span className="truncate text-xs font-semibold text-amber-700">{formatStatusLabel(volunteer.status)}</span>
-                      <div className="flex flex-wrap gap-2">
-                        {volunteer.isRequestingConfirmation && (
-                          <button
-                            type="button"
-                            onClick={() => handleCancelTeacherHandoff(volunteer.studentId)}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-200"
-                          >
-                            <X className="h-3.5 w-3.5" />
-                            Cancel
-                          </button>
-                        )}
-
-                        {volunteer.isCheckedIn && (
-                          <button
-                            type="button"
-                            onClick={() => handleSendBackToTeacher(volunteer.studentId)}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-600"
-                          >
-                            <LogOut className="h-3.5 w-3.5" />
-                            Send back
-                          </button>
-                        )}
-
-                        {volunteer.isReturningConfirmation && (
-                          <button
-                            type="button"
-                            onClick={() => handleAdminConfirmReturn(volunteer.studentId)}
-                            className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-600"
-                          >
-                            <LogIn className="h-3.5 w-3.5" />
-                            Confirm return
-                          </button>
-                        )}
-                      </div>
+                      <span className="truncate text-xs font-semibold text-emerald-700">{formatStatusLabel(volunteer.status)}</span>
+                      <button
+                        type="button"
+                        disabled={!isAvailable}
+                        onClick={() => handleSendToTeacher(volunteer.studentId, volunteer.teacherId, volunteer.classId, volunteer.id)}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold text-rose-700 shadow-sm transition hover:bg-rose-100 cursor-pointer"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        Send
+                      </button>
                     </div>
-                  )) : (
-                    <div className="px-4 py-10 text-center text-sm text-slate-400">No current volunteers right now.</div>
-                  )}
-                </div>
+                  )
+                }) : (
+                  <div className="px-4 py-10 text-center text-sm text-slate-400">No available volunteers right now.</div>
+                )}
               </div>
             </div>
+          </div>
 
-            <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
-              <div className="mb-3">
-                <div className="text-sm font-semibold text-slate-900">Manual hour adjustment</div>
-                <div className="text-xs text-slate-500">Add or remove hours without changing automatically calculated check-in hours.</div>
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-slate-900">Current volunteers</div>
+                <div className="text-xs text-slate-500">Students pending check-in, actively volunteering, or pending return confirmation.</div>
+              </div>
+              <div className="text-xs text-slate-500">{currentVolunteers.length} student{currentVolunteers.length === 1 ? '' : 's'}</div>
+            </div>
+
+            <div className="overflow-hidden rounded-[20px] border border-slate-200 bg-white">
+              <div className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.75fr_1fr] gap-3 border-b border-slate-200 px-4 py-3 text-sm font-semibold text-slate-700">
+                <span>Name</span>
+                <span>Assignment</span>
+                <span>Hours</span>
+                <span>Status</span>
+                <span>Action</span>
               </div>
 
-              <form onSubmit={handleManualHoursAdjustment} className="grid gap-3 md:grid-cols-[1.3fr_0.8fr_0.8fr_1.4fr_auto] md:items-end">
-                <label className="block text-xs font-semibold text-slate-600">
-                  Volunteer
-                  <select
-                    value={manualVolunteerId}
-                    onChange={(event) => setManualVolunteerId(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                    required
-                  >
-                    <option value="">Select volunteer...</option>
-                    {volunteers.map((volunteer) => (
-                      <option key={volunteer.student_id || volunteer.id} value={volunteer.student_id || volunteer.id}>
-                        {volunteer.fullName || getVolunteerName(volunteer)} ({Number(volunteer.total_hours || 0).toFixed(2)} hrs)
-                      </option>
-                    ))}
-                  </select>
-                </label>
+              <div className="divide-y divide-slate-100">
+                {currentVolunteers.length ? currentVolunteers.map((volunteer) => (
+                  <div key={volunteer.id} className="grid grid-cols-[1.05fr_0.9fr_0.8fr_0.75fr_1fr] gap-3 px-4 py-3 text-sm text-slate-700">
+                    <div>
+                      <p className="font-semibold text-slate-900">{volunteer.fullName}</p>
+                      <p className="text-xs text-slate-500">{volunteer.className !== '—' ? `${volunteer.className} • ${volunteer.teacherName}` : 'No class linked'}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-slate-700">{volunteer.className}</p>
+                      <p className="truncate text-xs text-slate-500">{volunteer.isCustomAssignment ? volunteer.room : `${volunteer.room} • ${volunteer.period}`}</p>
+                    </div>
+                    <span className="truncate font-semibold text-slate-900">{volunteer.totalHours} hrs</span>
+                    <span className="truncate text-xs font-semibold text-amber-700">{formatStatusLabel(volunteer.status)}</span>
+                    <div className="flex flex-wrap gap-2">
+                      {volunteer.isRequestingConfirmation && (
+                        <button
+                          type="button"
+                          onClick={() => handleCancelTeacherHandoff(volunteer.studentId)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-200"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                          Cancel
+                        </button>
+                      )}
 
-                <label className="block text-xs font-semibold text-slate-600">
-                  Action
-                  <select
-                    value={manualOperation}
-                    onChange={(event) => setManualOperation(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                  >
-                    <option value="add">Add hours</option>
-                    <option value="remove">Remove hours</option>
-                  </select>
-                </label>
+                      {volunteer.isCheckedIn && (
+                        <button
+                          type="button"
+                          onClick={() => handleSendBackToTeacher(volunteer.studentId)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-500 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-amber-600"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          Send back
+                        </button>
+                      )}
 
-                <label className="block text-xs font-semibold text-slate-600">
-                  Hours
-                  <input
-                    type="number"
-                    min="0.01"
-                    step="0.01"
-                    value={manualHours}
-                    onChange={(event) => setManualHours(event.target.value)}
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                    required
-                  />
-                </label>
+                      {volunteer.isReturningConfirmation && (
+                        <button
+                          type="button"
+                          onClick={() => handleAdminConfirmReturn(volunteer.studentId)}
+                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-emerald-600"
+                        >
+                          <LogIn className="h-3.5 w-3.5" />
+                          Confirm return
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                )) : (
+                  <div className="px-4 py-10 text-center text-sm text-slate-400">No current volunteers right now.</div>
+                )}
+              </div>
+            </div>
+          </div>
 
-                <label className="block text-xs font-semibold text-slate-600">
-                  Note
-                  <input
-                    type="text"
-                    maxLength="255"
-                    value={manualNote}
-                    onChange={(event) => setManualNote(event.target.value)}
-                    placeholder="Optional reason"
-                    className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
-                  />
-                </label>
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-slate-900">Manual hour adjustment</div>
+              <div className="text-xs text-slate-500">Add or remove hours without changing automatically calculated check-in hours.</div>
+            </div>
 
-                <button
-                  type="submit"
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+            <form onSubmit={handleManualHoursAdjustment} className="grid gap-3 md:grid-cols-[1.3fr_0.8fr_0.8fr_1.4fr_auto] md:items-end">
+              <label className="block text-xs font-semibold text-slate-600">
+                Volunteer
+                <select
+                  value={manualVolunteerId}
+                  onChange={(event) => setManualVolunteerId(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  required
                 >
-                  Apply
-                </button>
-              </form>
-              {manualAdjustmentMessage && (
-                <p className="mt-3 text-xs font-medium text-slate-600">{manualAdjustmentMessage}</p>
-              )}
-            </div>
+                  <option value="">Select volunteer...</option>
+                  {volunteers.map((volunteer) => (
+                    <option key={volunteer.student_id || volunteer.id} value={volunteer.student_id || volunteer.id}>
+                      {volunteer.fullName || getVolunteerName(volunteer)} ({Number(volunteer.total_hours || 0).toFixed(2)} hrs)
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-600">
+                Action
+                <select
+                  value={manualOperation}
+                  onChange={(event) => setManualOperation(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                >
+                  <option value="add">Add hours</option>
+                  <option value="remove">Remove hours</option>
+                </select>
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-600">
+                Hours
+                <input
+                  type="number"
+                  min="0.01"
+                  step="0.01"
+                  value={manualHours}
+                  onChange={(event) => setManualHours(event.target.value)}
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                  required
+                />
+              </label>
+
+              <label className="block text-xs font-semibold text-slate-600">
+                Note
+                <input
+                  type="text"
+                  maxLength="255"
+                  value={manualNote}
+                  onChange={(event) => setManualNote(event.target.value)}
+                  placeholder="Optional reason"
+                  className="mt-1 w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                />
+              </label>
+
+              <button
+                type="submit"
+                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-700"
+              >
+                Apply
+              </button>
+            </form>
+            {manualAdjustmentMessage && (
+              <p className="mt-3 text-xs font-medium text-slate-600">{manualAdjustmentMessage}</p>
+            )}
           </div>
         </div>
       </div>
-    
+
+      {customModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <form onSubmit={handleSendCustom} className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl">
+            <div className="mb-4 flex items-center justify-between">
+              <h4 className="text-base font-semibold text-slate-900">Custom assignment</h4>
+              <button
+                type="button"
+                onClick={closeCustomModal}
+                className="rounded-lg p-1 text-slate-500 hover:bg-slate-100"
+                aria-label="Close"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <label className="mb-3 block text-xs font-semibold text-slate-600">
+              Which teacher
+              <input
+                value={customForm.teacher}
+                onChange={(e) => setCustomForm((prev) => ({ ...prev, teacher: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                placeholder="First and last name"
+                maxLength={255}
+                list="custom-teacher-names"
+                autoComplete="off"
+                required
+                autoFocus
+              />
+              <datalist id="custom-teacher-names">
+                {teacherFullNames.map((name) => (
+                  <option key={name} value={name} />
+                ))}
+              </datalist>
+            </label>
+
+            <label className="mb-4 block text-xs font-semibold text-slate-600">
+              Where
+              <input
+                value={customForm.where}
+                onChange={(e) => setCustomForm((prev) => ({ ...prev, where: e.target.value }))}
+                className="mt-1 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm font-normal text-slate-700 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
+                placeholder="e.g. Library"
+                maxLength={255}
+                required
+              />
+            </label>
+
+            {customError && (
+              <p className="mb-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">
+                {customError}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeCustomModal}
+                className="rounded-xl border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={customSending}
+                className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-60"
+              >
+                {customSending ? 'Sending…' : 'Send volunteer'}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
   )
 }

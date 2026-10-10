@@ -43,8 +43,24 @@ export default function VolunteersTab({ currentTeacherId }) {
 
   const [selectedClassSelections, setSelectedClassSelections] = useState({})
 
+  // Ask the server which schedule is in effect (Ramadan-aware).
+  const { data: scheduleNowData } = useQuery(
+    ['schedule-now'],
+    () => backend.scheduleNow(),
+    { refetchInterval: 60000, staleTime: 60000, retry: 0 }
+  )
+
+  const scheduleDayParam = useMemo(() => {
+    const dt = scheduleNowData?.dayType
+    return dt === 'fri' ? 'fri' : 'mon-thu'
+  }, [scheduleNowData])
+
   const { data: usersData } = useQuery(['users'], () => backend.list('users'), { refetchInterval: 5000 })
-  const { data: classesData } = useQuery(['classes'], () => backend.list('classes'), { refetchInterval: 5000 })
+  const { data: classesData } = useQuery(
+    ['classes', scheduleDayParam],
+    () => backend.list('classes', { schedule_days: scheduleDayParam }),
+    { refetchInterval: 5000 }
+  )
   const { data: volunteersData } = useQuery(['volunteers'], () => backend.list('volunteers'), { refetchInterval: 5000 })
 
   const users = useMemo(() => getRows(usersData), [usersData])
@@ -119,7 +135,7 @@ export default function VolunteersTab({ currentTeacherId }) {
       .filter((volunteer) => normalizeText(volunteer.status) !== 'inactive')
       .map((volunteer) => {
         const fullName = volunteer.name || `${volunteer.first_name || ''} ${volunteer.last_name || ''}`.trim() || volunteer.email_address || `Volunteer ${volunteer.id}`
-        
+
         const rawStatus = (volunteer.status || 'available').toLowerCase()
         const isPendingReturn = rawStatus === 'requesting_confirmation' || rawStatus === 'pending return' || rawStatus === 'requesting return'
 
@@ -130,7 +146,7 @@ export default function VolunteersTab({ currentTeacherId }) {
           const selectedClassId = selectedClassSelections[volunteer.id]
           classId = selectedClassId !== undefined ? selectedClassId : (volunteer.assigned_class_id || volunteer.class_id || '')
         }
-        
+
         const classItem = classId ? classes.find((entry) => String(entry.id) === String(classId)) : null
         const teacher = classItem ? teacherById.get(String(classItem.teacher_id)) : null
 
@@ -183,8 +199,7 @@ export default function VolunteersTab({ currentTeacherId }) {
       const normalizedStatus = normalizeText(v.status || '')
       const assignedClass = String(v.assigned_class_id || v.class_id || '')
       const assignedTeacher = String(v.teacher_id || v.assigned_teacher_id || '')
-      return teacherClassIds.has(assignedClass) || assignedTeacher === String(currentTeacherId) || teacherScopedStatuses.has(normalizedStatus)
-    })
+      return teacherClassIds.has(assignedClass) || assignedTeacher === String(currentTeacherId)    })
   }, [volunteers, teacherClassIds, currentTeacherId])
 
   const filterOptions = useMemo(() => {
@@ -542,7 +557,7 @@ export default function VolunteersTab({ currentTeacherId }) {
                       const rawStatus = (volunteer.status || 'available').toLowerCase()
                       const isAvailable = rawStatus === 'available'
                       const isPendingReturn = rawStatus === 'requesting_confirmation' || rawStatus === 'pending return' || rawStatus === 'requesting return'
-                      
+
                       const hasSelectedClass = Boolean(volunteer.classId)
                       const canSend = isAvailable && hasSelectedClass
 
@@ -573,8 +588,8 @@ export default function VolunteersTab({ currentTeacherId }) {
                                 }))
                               }}
                               className={`w-full rounded-xl border border-slate-300 px-3 py-2 text-xs shadow-sm outline-none transition ${
-                                isPendingReturn 
-                                  ? 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-80 select-none' 
+                                isPendingReturn
+                                  ? 'bg-slate-100 text-slate-500 cursor-not-allowed opacity-80 select-none'
                                   : 'bg-slate-50 focus:border-slate-400 focus:bg-white focus:ring-2 focus:ring-slate-100'
                               }`}
                             >
@@ -597,7 +612,7 @@ export default function VolunteersTab({ currentTeacherId }) {
 
                           <div className="flex gap-2 pt-1">
                             {isPendingReturn ? (
-                              <button 
+                              <button
                                 type="button"
                                 onClick={() => handleAdminConfirmReturn(volunteer.id)}
                                 className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition bg-emerald-500 text-white hover:bg-emerald-600 shadow-sm cursor-pointer"
@@ -606,7 +621,7 @@ export default function VolunteersTab({ currentTeacherId }) {
                                 Confirm return
                               </button>
                             ) : rawStatus === 'currently volunteering' || rawStatus === 'active' || rawStatus === 'checked_in' || rawStatus === 'checked in' ? (
-                              <button 
+                              <button
                                 type="button"
                                 onClick={() => handleReturnFromTeacher(volunteer.id)}
                                 className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition bg-amber-500 text-white hover:bg-amber-600 shadow-sm cursor-pointer"
@@ -615,13 +630,13 @@ export default function VolunteersTab({ currentTeacherId }) {
                                 Send back to admin
                               </button>
                             ) : (
-                              <button 
+                              <button
                                 type="button"
                                 disabled={!canSend}
                                 onClick={() => handleSendToTeacher(volunteer.id, volunteer.teacherId, volunteer.classId)}
                                 className={`inline-flex flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition ${
-                                  canSend 
-                                    ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 shadow-sm cursor-pointer' 
+                                  canSend
+                                    ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 shadow-sm cursor-pointer'
                                     : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
                                 }`}
                               >

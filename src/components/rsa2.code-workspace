@@ -1,0 +1,11 @@
+{
+	"folders": [
+		{
+			"path": "../.."
+		},
+		{
+			"path": "../../../rsa2-backend"
+		}
+	],
+	"settings": {}
+}

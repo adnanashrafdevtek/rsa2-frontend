@@ -1,8 +1,8 @@
-import React, { useEffect, useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import backend from '../api/backendClient'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '../components/ui/tabs'
-import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake, Bell } from 'lucide-react'
+import { Users, GraduationCap, MapPin, MessageSquare, BookOpen, Building2, CalendarCheck, Search, CalendarDays, Trash2, Plus, Pencil, Upload, HeartHandshake, Bell, Moon } from 'lucide-react'
 import AdminVolunteerPanel from '../components/AdminVolunteerPanel'
 import ReviewsTab from '../components/ReviewsTab'
 import ScheduleTable from '../components/ScheduleTable'
@@ -68,6 +68,21 @@ const RESOURCES = [
 
 const CLASS_DAY_OPTIONS = ['A-day', 'B-day']
 const CLASS_TIME_OPTIONS = ['7:50-8:10', '8:15-8:55', '8:55-9:40', '9:40-10:25', '10:25-11:15', '11:15-11:55', '11:55-12:15', '12:15-1:00', '1:00-2:00', '2:00-2:10', '2:10-2:50', '2:50-3:25']
+
+// Toggle options for the Classes tab. `all` returns both sets from the backend.
+const CLASS_SCHEDULE_DAY_OPTIONS = [
+  { value: 'mon-thu', label: 'Mon–Thu' },
+  { value: 'fri', label: 'Friday' },
+  { value: 'all', label: 'All' },
+]
+
+// Guess based on the local computer clock. The server answer (via
+// /api/schedule-now) refines this shortly after mount, so all computers agree.
+function guessScheduleDayFromBrowserClock() {
+  const day = new Date().getDay() // 0 = Sun ... 5 = Fri, 6 = Sat
+  if (day === 5) return 'fri'
+  return 'mon-thu'
+}
 
 function formatEventDateTime(value) {
   if (!value) return ''
@@ -175,9 +190,91 @@ function ResourcePanel({ resource, resourceMeta }) {
     return window.localStorage.getItem('planner-admin-action') || 'classes'
   })
 
+  // ---- Schedule-day toggle (Mon-Thu / Friday / All) for the Classes tab ----
+  const [classScheduleDays, setClassScheduleDays] = useState(guessScheduleDayFromBrowserClock)
+  // Set to true the moment the user manually picks a toggle value, so the
+  // server response does not override their choice for the current visit.
+  const userChoseScheduleDaysRef = useRef(false)
+
+  // Server is the single source of truth for "is today a Friday at school?".
+  // Polls every minute so it self-corrects if the page stays open across a day boundary.
+  const { data: scheduleNowData, refetch: refetchScheduleNow } = useQuery(
+    ['schedule-now'],
+    () => backend.scheduleNow(),
+    {
+      staleTime: 60 * 1000,
+      refetchInterval: 60 * 1000,
+      refetchOnWindowFocus: true,
+      retry: 0,
+    }
+  )
+
+  // Ramadan mode (admin toggle). Synced from the server response.
+  const [ramadanMode, setRamadanMode] = useState(false)
+  const [ramadanSaving, setRamadanSaving] = useState(false)
+
+  useEffect(() => {
+    if (typeof scheduleNowData?.ramadanMode === 'boolean') {
+      setRamadanMode(scheduleNowData.ramadanMode)
+    }
+  }, [scheduleNowData])
+
+  const handleToggleRamadan = async () => {
+    const next = !ramadanMode
+    const confirmed = window.confirm(
+      next
+        ? 'Turn Ramadan mode ON? All users will see the Friday schedule every weekday until you turn it off.'
+        : 'Turn Ramadan mode OFF? Everyone will go back to the normal Mon-Thu / Friday schedule.'
+    )
+    if (!confirmed) return
+
+    setRamadanSaving(true)
+    try {
+      const result = await backend.setRamadanMode(next)
+      const newRamadan = typeof result?.ramadanMode === 'boolean' ? result.ramadanMode : next
+      setRamadanMode(newRamadan)
+
+      // Reset the manual-override flag so the server's effective day wins again
+      userChoseScheduleDaysRef.current = false
+      if (result?.dayType === 'fri' || result?.dayType === 'mon-thu') {
+        setClassScheduleDays(result.dayType)
+      }
+
+      await refetchScheduleNow()
+    } catch (err) {
+      alert(err?.message || 'Failed to toggle Ramadan mode.')
+    } finally {
+      setRamadanSaving(false)
+    }
+  }
+
+  const serverDayType = useMemo(() => {
+    const dayType = scheduleNowData?.dayType
+    if (dayType === 'fri') return 'fri'
+    if (dayType === 'mon-thu') return 'mon-thu'
+    return null
+  }, [scheduleNowData])
+
+  // Snap to the server's answer unless the user has already chosen.
+  useEffect(() => {
+    if (!serverDayType) return
+    if (userChoseScheduleDaysRef.current) return
+    setClassScheduleDays(serverDayType)
+  }, [serverDayType])
+
+  const handleClassScheduleDaysChange = (value) => {
+    userChoseScheduleDaysRef.current = true
+    setClassScheduleDays(value)
+  }
+
   const queryFilters = useMemo(() => {
+    // Only the Classes tab talks about schedule days. Everything else keeps
+    // its existing filters unchanged.
+    if (resource === 'classes') {
+      return { ...filters, schedule_days: classScheduleDays }
+    }
     return filters
-  }, [filters])
+  }, [filters, resource, classScheduleDays])
 
   const { data, isLoading, error, refetch } = useQuery(
     ['backend', resource, queryFilters],
@@ -187,7 +284,7 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const { data: userOptionsData, refetch: refetchUsers } = useQuery(['backend', 'profile-users'], () => backend.list('users'), { staleTime: 1000 * 30 })
   const { data: roleOptionsData, refetch: refetchRoles } = useQuery(['backend', 'profile-roles'], () => backend.list('roles'), { staleTime: 1000 * 30 })
-  const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 2 }), { staleTime: 1000 * 30 })
+  const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 1 }), { staleTime: 1000 * 30 })
   const { data: studentOptionsData } = useQuery(['backend', 'students'], () => backend.list('users', { role_id: 3 }), { staleTime: 1000 * 30 })
   const { data: userSchedulesData, refetch: refetchSchedules } = useQuery(['backend', 'user-schedules'], () => backend.list('user_schedules'), { staleTime: 1000 * 30 })
   const { data: classOptionsData } = useQuery(['backend', 'class-options'], () => backend.list('classes'), { staleTime: 1000 * 30 })
@@ -210,6 +307,9 @@ function ResourcePanel({ resource, resourceMeta }) {
     setShowClubForm(false)
     setShowEventForm(false)
     setAdminAction(resource === 'classes' ? 'classes' : null)
+    // Fresh visit: allow the server (or browser-clock guess) to pick
+    // the default schedule day again.
+    userChoseScheduleDaysRef.current = false
   }, [resource])
 
   useEffect(() => {
@@ -340,23 +440,23 @@ function ResourcePanel({ resource, resourceMeta }) {
   }, [resource, resourceMeta.fields])
 
   const announcementTableRows = useMemo(() => {
-  if (resource !== 'announcements') return visibleRows
+    if (resource !== 'announcements') return visibleRows
 
-  return visibleRows.map((row) => {
-    const creator = userOptions.find(
-      (entry) => String(entry.id) === String(row.created_by)
-    )
+    return visibleRows.map((row) => {
+      const creator = userOptions.find(
+        (entry) => String(entry.id) === String(row.created_by)
+      )
 
-    return {
-      ...row,
-      created_by:
-        row.created_by_name ||
-        (creator ? formatUserName(creator) : 'Unknown user'),
-      created_at_date: formatAnnouncementDate(row.created_at),
-      created_at_time: formatAnnouncementTime(row.created_at)
-    }
-  })
-}, [resource, userOptions, visibleRows])
+      return {
+        ...row,
+        created_by:
+          row.created_by_name ||
+          (creator ? formatUserName(creator) : 'Unknown user'),
+        created_at_date: formatAnnouncementDate(row.created_at),
+        created_at_time: formatAnnouncementTime(row.created_at)
+      }
+    })
+  }, [resource, userOptions, visibleRows])
 
   const handleSubmit = (event) => {
     event.preventDefault()
@@ -428,17 +528,17 @@ function ResourcePanel({ resource, resourceMeta }) {
   const handleClassSpreadsheetUpload = async (event) => {
     const file = event.target.files?.[0]
     if (!file) return
-  
+
     if (!isAdmin) {
       setActionMessage('Only admin users can import classes.')
       return
     }
-  
+
     try {
       const arrayBuffer = await file.arrayBuffer()
       const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)))
       const result = await backend.create('classes/import-csv', { file_data: base64, file_name: file.name })
-  
+
       const inserted = result?.insertedCount ?? 0
       const errorText = result?.errors?.length
         ? ` Errors: ${result.errors.map((e) => `Row ${e.index}: ${e.message}`).join(' | ')}`
@@ -805,62 +905,62 @@ function ResourcePanel({ resource, resourceMeta }) {
                   <textarea value={announcementForm.content} onChange={(event) => setAnnouncementForm((prev) => ({ ...prev, content: event.target.value }))} className="min-h-24 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm" placeholder="Write the announcement" required />
                 </label>
                 <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 md:col-span-2">
-  <div className="flex flex-wrap items-center justify-between gap-3">
-    <span className="font-medium text-slate-700">Recipients</span>
-    <label className="flex items-center gap-2 text-sm text-slate-600">
-      <input
-        type="checkbox"
-        checked={selectAllTeachers}
-        onChange={(event) => {
-          const isChecked = event.target.checked
-          setSelectAllTeachers(isChecked)
-          setAnnouncementRecipientIds(isChecked ? teacherOptions.map((teacher) => String(teacher.id)) : [])
-        }}
-      />
-      <span>Select all teachers</span>
-    </label>
-  </div>
-  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-  {teacherOptions.map((teacher) => {
-    const teacherId = String(teacher.id)
-    const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
-    const checked = selectAllTeachers || announcementRecipientIds.includes(teacherId)
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <span className="font-medium text-slate-700">Recipients</span>
+                    <label className="flex items-center gap-2 text-sm text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={selectAllTeachers}
+                        onChange={(event) => {
+                          const isChecked = event.target.checked
+                          setSelectAllTeachers(isChecked)
+                          setAnnouncementRecipientIds(isChecked ? teacherOptions.map((teacher) => String(teacher.id)) : [])
+                        }}
+                      />
+                      <span>Select all teachers</span>
+                    </label>
+                  </div>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+                    {teacherOptions.map((teacher) => {
+                      const teacherId = String(teacher.id)
+                      const teacherName = `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || `Teacher ${teacher.id}`
+                      const checked = selectAllTeachers || announcementRecipientIds.includes(teacherId)
 
-    return (
-      <label key={teacher.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={(event) => {
-            const isChecked = event.target.checked
+                      return (
+                        <label key={teacher.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={(event) => {
+                              const isChecked = event.target.checked
 
-            if (selectAllTeachers) {
-              // Breaking out of "select all" mode: keep everyone checked except the one just unchecked
-              const allIds = teacherOptions.map((t) => String(t.id))
-              const nextList = isChecked ? allIds : allIds.filter((id) => id !== teacherId)
-              setSelectAllTeachers(false)
-              setAnnouncementRecipientIds(nextList)
-              return
-            }
+                              if (selectAllTeachers) {
+                                // Breaking out of "select all" mode: keep everyone checked except the one just unchecked
+                                const allIds = teacherOptions.map((t) => String(t.id))
+                                const nextList = isChecked ? allIds : allIds.filter((id) => id !== teacherId)
+                                setSelectAllTeachers(false)
+                                setAnnouncementRecipientIds(nextList)
+                                return
+                              }
 
-            setAnnouncementRecipientIds((prev) => {
-              const next = new Set(prev)
-              if (isChecked) {
-                next.add(teacherId)
-              } else {
-                next.delete(teacherId)
-              }
-              const nextList = Array.from(next)
-              setSelectAllTeachers(teacherOptions.length > 0 && nextList.length === teacherOptions.length)
-              return nextList
-            })
-          }}
-        />
-        <span>{teacherName}</span>
-      </label>
-    )
-  })}
-</div>
+                              setAnnouncementRecipientIds((prev) => {
+                                const next = new Set(prev)
+                                if (isChecked) {
+                                  next.add(teacherId)
+                                } else {
+                                  next.delete(teacherId)
+                                }
+                                const nextList = Array.from(next)
+                                setSelectAllTeachers(teacherOptions.length > 0 && nextList.length === teacherOptions.length)
+                                return nextList
+                              })
+                            }}
+                          />
+                          <span>{teacherName}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
                 </div>
               </div>
               <div className="mt-4 flex flex-wrap gap-2">
@@ -1018,20 +1118,78 @@ function ResourcePanel({ resource, resourceMeta }) {
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div>
               <h3 className="font-semibold text-slate-900">Classes</h3>
-              <p className="mt-1 text-sm text-slate-500">Edit, manage, and import classes from this panel.</p>
+              <p className="mt-1 text-sm text-slate-500">
+                Edit, manage, and import classes from this panel.
+                {' '}
+                <span className="text-slate-400">
+                  Showing: {CLASS_SCHEDULE_DAY_OPTIONS.find((option) => option.value === classScheduleDays)?.label || classScheduleDays}
+                  {serverDayType && serverDayType !== classScheduleDays ? ' (manual override)' : ''}
+                  {ramadanMode ? ' · Ramadan schedule active' : ''}
+                </span>
+              </p>
             </div>
-            
-            <label className="relative inline-flex cursor-pointer items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
-              <Upload className="h-4 w-4" />
-              <span>Import Classes (CSV/Excel)</span>
-              <input 
-                type="file" 
-                accept=".csv,.xlsx,.xls" 
-                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full" 
-                onChange={handleClassSpreadsheetUpload} 
-                disabled={!isAdmin} 
-              />
-            </label>
+
+            <div className="flex flex-wrap items-center gap-3">
+              {/* Mon–Thu / Friday / All switch. Auto-selected from the server clock on first load. */}
+              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-100 p-1" role="tablist" aria-label="Schedule days">
+                {CLASS_SCHEDULE_DAY_OPTIONS.map((option) => {
+                  const isActive = classScheduleDays === option.value
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      onClick={() => handleClassScheduleDaysChange(option.value)}
+                      className={`rounded-md px-3 py-1.5 text-xs font-medium transition ${
+                        isActive
+                          ? 'bg-white text-teal-700 shadow-sm'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {option.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Ramadan mode — admin toggle; read-only badge for everyone else */}
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={handleToggleRamadan}
+                  disabled={ramadanSaving}
+                  title={ramadanMode
+                    ? 'Ramadan schedule is ON — Mon-Fri runs the Friday schedule'
+                    : 'Ramadan schedule is OFF'}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium transition ${
+                    ramadanMode
+                      ? 'border-amber-300 bg-amber-100 text-amber-800 hover:bg-amber-200'
+                      : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                  } ${ramadanSaving ? 'cursor-wait opacity-60' : ''}`}
+                >
+                  <Moon className="h-3.5 w-3.5" />
+                  {ramadanMode ? 'Ramadan Mode: ON' : 'Ramadan Mode: OFF'}
+                </button>
+              ) : ramadanMode ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-medium text-amber-800">
+                  <Moon className="h-3.5 w-3.5" />
+                  Ramadan schedule active
+                </span>
+              ) : null}
+
+              <label className="relative inline-flex cursor-pointer items-center gap-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
+                <Upload className="h-4 w-4" />
+                <span>Import Classes (CSV/Excel)</span>
+                <input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                  onChange={handleClassSpreadsheetUpload}
+                  disabled={!isAdmin}
+                />
+              </label>
+            </div>
           </div>
 
           {actionMessage && (
@@ -1104,6 +1262,7 @@ function ResourcePanel({ resource, resourceMeta }) {
               const roomName = row.room || '—'
               const periodName = row.period || '—'
               const timeName = row.time || '—'
+              const scheduleDaysLabel = row.schedule_days === 'fri' ? 'Friday' : 'Mon–Thu'
 
               return (
                 <div key={`class-${row.id}`} className="rounded-xl border border-slate-200 bg-slate-50 p-4">
@@ -1115,6 +1274,16 @@ function ResourcePanel({ resource, resourceMeta }) {
                       <div className="text-sm text-slate-600">Period: {periodName}</div>
                       <div className="text-sm text-slate-600">Time: {timeName}</div>
                       <div className="text-sm text-slate-600">Grade: {row.grade_level || '—'}</div>
+                      <div className="text-sm text-slate-600">
+                        Days:{' '}
+                        <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${
+                          row.schedule_days === 'fri'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-teal-100 text-teal-800'
+                        }`}>
+                          {scheduleDaysLabel}
+                        </span>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       <button
@@ -1140,7 +1309,11 @@ function ResourcePanel({ resource, resourceMeta }) {
                 </div>
               )
             }) : (
-              <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 md:col-span-2 xl:col-span-3">No classes found.</div>
+              <div className="rounded-xl border border-dashed border-slate-300 p-3 text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+                {classScheduleDays === 'fri'
+                  ? 'No Friday classes found. Switch to Mon–Thu or All to see the other schedule.'
+                  : 'No classes found.'}
+              </div>
             )}
           </div>
         </div>

@@ -28,7 +28,13 @@ const App = () => {
   const handleLogin = (userData) => {
     setUser(userData);
   };
-  
+
+  // Role IDs in your database: Teacher = 1, Admin = 2, Student = 3
+  const roleId = Number(user?.role_id);
+  const isTeacher = roleId === 1;
+  const isAdmin = roleId === 2;
+  const homePath = isAdmin ? '/' : '/teacher-dashboard';
+
   return (
     <BrowserRouter>
       <Routes>
@@ -36,38 +42,56 @@ const App = () => {
         <Route
           path="/login"
           element={
-            user ? (
-              Number(user.role_id) === 2 ? (
-                <Navigate to="/teacher-dashboard" replace />
-              ) : Number(user.role_id) === 1 ? (
-                <Navigate to="/" replace />
-              ) : (
-                <LoginForm onLoginSuccess={handleLogin} />
-              )
+            user && (isTeacher || isAdmin) ? (
+              <Navigate to={homePath} replace />
             ) : (
               <LoginForm onLoginSuccess={handleLogin} />
             )
           }
         />
         <Route path="/reset-password" element={<ResetPassword />} />
-        
+
         {/* Protected Routes wrapped in Layout */}
         <Route
           path="/*"
           element={
-            user && [1, 2].includes(Number(user.role_id)) ? (
+            user && (isTeacher || isAdmin) ? (
               <Layout>
                 <Routes>
-                  <Route path="/" element={<Dashboard />} />
-                  <Route path="/teacher-dashboard" element={<TeacherDashboard />} />
-                  <Route path="/classes" element={<Dashboard initialResource="classes" />} />
-                  <Route path="/rooms" element={<Dashboard initialResource="rooms" />} />
-                  <Route path="/schedules" element={<Dashboard initialResource="schedules" />} />
+                  {/* Admin-only pages */}
+                  <Route
+                    path="/"
+                    element={isAdmin ? <Dashboard /> : <Navigate to="/teacher-dashboard" replace />}
+                  />
+                  <Route
+                    path="/classes"
+                    element={isAdmin ? <Dashboard initialResource="classes" /> : <Navigate to={homePath} replace />}
+                  />
+                  <Route
+                    path="/rooms"
+                    element={isAdmin ? <Dashboard initialResource="rooms" /> : <Navigate to={homePath} replace />}
+                  />
+                  <Route
+                    path="/schedules"
+                    element={isAdmin ? <Dashboard initialResource="schedules" /> : <Navigate to={homePath} replace />}
+                  />
+                  <Route
+                    path="/admin/upload-excel"
+                    element={isAdmin ? <ExcelUploadPage /> : <Navigate to={homePath} replace />}
+                  />
+
+                  {/* Teacher-only page */}
+                  <Route
+                    path="/teacher-dashboard"
+                    element={isTeacher ? <TeacherDashboard /> : <Navigate to="/" replace />}
+                  />
+
+                  {/* Shared pages */}
                   <Route path="/events" element={<Annoucements />} />
                   <Route path="/announcements" element={<Annoucements />} />
                   <Route path="/profile" element={<ProfilePage />} />
-                  <Route path="/admin/upload-excel" element={<ExcelUploadPage />} />
-                  <Route path="*" element={<Navigate to="/" replace />} />
+
+                  <Route path="*" element={<Navigate to={homePath} replace />} />
                 </Routes>
               </Layout>
             ) : (
