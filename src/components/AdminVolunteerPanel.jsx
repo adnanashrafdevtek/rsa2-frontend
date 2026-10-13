@@ -122,7 +122,18 @@ export default function AdminVolunteerPanel() {
   }, [scheduleNowData])
 
   // Teacher is role_id 1 in the role table
-  const { data: teachersData } = useQuery(['teachers'], () => backend.list('users', { role_id: 1 }), { refetchInterval: 5000 })
+  // Role IDs differ between databases, so look the teacher role up by name.
+const { data: rolesData } = useQuery(['roles'], () => backend.list('roles'), { staleTime: 1000 * 60 })
+const teacherRoleId = useMemo(() => {
+  const match = getRows(rolesData).find((role) => normalizeText(role.name) === 'teacher')
+  return match ? match.id : null
+}, [rolesData])
+
+const { data: teachersData } = useQuery(
+  ['teachers', teacherRoleId],
+  () => backend.list('users', { role_id: teacherRoleId }),
+  { refetchInterval: 5000, enabled: teacherRoleId !== null }
+)
   const { data: classesData } = useQuery(
     ['classes', scheduleDayParam],
     () => backend.list('classes', { schedule_days: scheduleDayParam }),

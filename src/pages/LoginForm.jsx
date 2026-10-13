@@ -19,22 +19,22 @@ export default function LoginForm({ onLoginSuccess }) {
       const data = await response.json();
 
       if (response.ok) {
-        const roleId = Number(data.user.role_id);
+        // Use the role NAME, not role_id. Role IDs differ between databases
+        // (main DB has Admin=1/Teacher=2; some dev DBs are the reverse).
+        const roleName = String(data.user.role_name || '').trim();
+        const normalizedRole = roleName.toLowerCase();
 
-        // Role IDs in your database: Teacher = 1, Admin = 2, Student = 3
-        const isTeacher = roleId === 1;
-        const isAdmin = roleId === 2;
+        const isAdmin = normalizedRole === 'admin';
+        const isTeacher = normalizedRole === 'teacher';
 
-        if (!isTeacher && !isAdmin) {
-          // Role 3 (Student) and any other unauthorized roles
+        if (!isAdmin && !isTeacher) {
           localStorage.clear();
           setError('You are not authorized to access this application.');
           return;
         }
 
-        // Store essential user info
         localStorage.setItem('planner-current-user-id', data.user.id);
-        localStorage.setItem('planner-current-role-id', roleId);
+        localStorage.setItem('planner-current-role-id', data.user.role_id);
         localStorage.setItem('planner-current-user-name', `${data.user.first_name} ${data.user.last_name}`);
         localStorage.setItem('planner-role', isAdmin ? 'Admin' : 'Teacher');
 

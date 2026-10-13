@@ -30,10 +30,12 @@ const App = () => {
   };
 
   // Role IDs in your database: Teacher = 1, Admin = 2, Student = 3
-  const roleId = Number(user?.role_id);
-  const isTeacher = roleId === 1;
-  const isAdmin = roleId === 2;
-  const homePath = isAdmin ? '/' : '/teacher-dashboard';
+     const roleName = String(
+     user?.role_name || localStorage.getItem('planner-role') || ''
+   ).trim().toLowerCase();
+   const isAdmin = roleName === 'admin';
+   const isTeacher = roleName === 'teacher';
+   const homePath = isAdmin ? '/' : '/teacher-dashboard';
 
   return (
     <BrowserRouter>

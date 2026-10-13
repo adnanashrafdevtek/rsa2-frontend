@@ -284,8 +284,21 @@ function ResourcePanel({ resource, resourceMeta }) {
 
   const { data: userOptionsData, refetch: refetchUsers } = useQuery(['backend', 'profile-users'], () => backend.list('users'), { staleTime: 1000 * 30 })
   const { data: roleOptionsData, refetch: refetchRoles } = useQuery(['backend', 'profile-roles'], () => backend.list('roles'), { staleTime: 1000 * 30 })
-  const { data: teacherOptionsData } = useQuery(['backend', 'teachers'], () => backend.list('users', { role_id: 1 }), { staleTime: 1000 * 30 })
-  const { data: studentOptionsData } = useQuery(['backend', 'students'], () => backend.list('users', { role_id: 3 }), { staleTime: 1000 * 30 })
+  const roleIdByName = useMemo(() => {
+  const rows = getRows(roleOptionsData)
+  return Object.fromEntries(rows.map((role) => [String(role.name || '').trim().toLowerCase(), role.id]))
+}, [roleOptionsData])
+
+const { data: teacherOptionsData } = useQuery(
+  ['backend', 'teachers', roleIdByName.teacher],
+  () => backend.list('users', { role_id: roleIdByName.teacher }),
+  { staleTime: 1000 * 30, enabled: roleIdByName.teacher !== undefined }
+)
+const { data: studentOptionsData } = useQuery(
+  ['backend', 'students', roleIdByName.student],
+  () => backend.list('users', { role_id: roleIdByName.student }),
+  { staleTime: 1000 * 30, enabled: roleIdByName.student !== undefined }
+)
   const { data: userSchedulesData, refetch: refetchSchedules } = useQuery(['backend', 'user-schedules'], () => backend.list('user_schedules'), { staleTime: 1000 * 30 })
   const { data: classOptionsData } = useQuery(['backend', 'class-options'], () => backend.list('classes'), { staleTime: 1000 * 30 })
   const { data: eventOptionsData } = useQuery(['backend', 'event-options'], () => backend.list('events'), { staleTime: 1000 * 30 })
