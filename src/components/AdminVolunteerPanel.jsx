@@ -129,10 +129,20 @@ const teacherRoleId = useMemo(() => {
   return match ? match.id : null
 }, [rolesData])
 
+const adminRoleId = useMemo(() => {
+  const match = getRows(rolesData).find((role) => normalizeText(role.name) === 'admin')
+  return match ? match.id : null
+}, [rolesData])
+
 const { data: teachersData } = useQuery(
   ['teachers', teacherRoleId],
   () => backend.list('users', { role_id: teacherRoleId }),
   { refetchInterval: 5000, enabled: teacherRoleId !== null }
+)
+const { data: adminsData } = useQuery(
+  ['admins', adminRoleId],
+  () => backend.list('users', { role_id: adminRoleId }),
+  { refetchInterval: 5000, enabled: adminRoleId !== null }
 )
   const { data: classesData } = useQuery(
     ['classes', scheduleDayParam],
@@ -142,6 +152,7 @@ const { data: teachersData } = useQuery(
   const { data: volunteersData } = useQuery(['volunteers'], () => backend.list('volunteers'), { refetchInterval: 5000 })
 
   const teacherUsers = useMemo(() => getRows(teachersData), [teachersData])
+  const adminUsers = useMemo(() => getRows(adminsData), [adminsData])
   const classes = useMemo(() => getRows(classesData), [classesData])
   const volunteers = useMemo(() => getRows(volunteersData), [volunteersData])
 
@@ -154,6 +165,10 @@ const { data: teachersData } = useQuery(
   const teacherById = useMemo(() => {
     return new Map(teacherUsers.map((teacher) => [String(teacher.id), teacher]))
   }, [teacherUsers])
+
+  const adminById = useMemo(() => {
+    return new Map(adminUsers.map((admin) => [String(admin.id), admin]))
+  }, [adminUsers])
 
   // Exact teacher names offered as suggestions in the custom box
   const teacherFullNames = useMemo(() => {
@@ -210,6 +225,7 @@ const { data: teachersData } = useQuery(
         const classId = volunteer.assigned_class_id || volunteer.class_id || ''
         const classItem = classId ? classes.find((entry) => String(entry.id) === String(classId)) : null
         const teacher = classItem ? teacherById.get(String(classItem.teacher_id)) : null
+        const assignedAdmin = adminById.get(String(volunteer.assigned_teacher_id)) || null
         const teacherId = classItem?.teacher_id ? String(classItem.teacher_id) : (volunteer.assigned_teacher_id ? String(volunteer.assigned_teacher_id) : '')
         const isAvailable = AVAILABLE_VOLUNTEER_STATUSES.has(status)
         const isCurrent = CURRENT_VOLUNTEER_STATUSES.has(status)
@@ -225,13 +241,16 @@ const { data: teachersData } = useQuery(
           totalHours: getVolunteerHours(volunteer, nowMs),
           status: volunteer.status || 'available',
           className: classItem?.name || classItem?.class_name || (isCustomAssignment ? 'Custom' : '—'),
-          teacherName: teacher
-            ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || '—'
-            : (customTeacher || '—'),
+          teacherName: assignedAdmin
+            ? `${assignedAdmin.first_name || ''} ${assignedAdmin.last_name || ''}`.trim() || assignedAdmin.email_address || '—'
+            : teacher
+              ? `${teacher.first_name || ''} ${teacher.last_name || ''}`.trim() || teacher.email_address || '—'
+              : (customTeacher || '—'),
           room: classItem?.room || classItem?.room_name || customLocation || '—',
           period: classItem?.period || '—',
           classId: classId ? String(classId) : '',
           teacherId,
+          assignedTeacherId: volunteer.assigned_teacher_id ? String(volunteer.assigned_teacher_id) : '',
           isCustomAssignment: Boolean(isCustomAssignment),
           searchText: normalizeText([fullName, volunteer.status, classItem?.name, classItem?.room, classItem?.period, teacher?.first_name, teacher?.last_name, customTeacher, customLocation].filter(Boolean).join(' ')),
           isAvailable,
@@ -241,7 +260,7 @@ const { data: teachersData } = useQuery(
           isCheckedIn: status === 'checked_in' || status === 'checked in' || status === 'currently volunteering',
         }
       })
-  }, [classes, teacherById, volunteers, nowMs])
+  }, [adminById, classes, teacherById, volunteers, nowMs])
 
   const availableVolunteers = useMemo(
     () => volunteerRows.filter((volunteer) => volunteer.isAvailable),
@@ -251,6 +270,11 @@ const { data: teachersData } = useQuery(
   const currentVolunteers = useMemo(
     () => volunteerRows.filter((volunteer) => volunteer.isCurrent),
     [volunteerRows]
+  )
+
+  const adminAssignedVolunteers = useMemo(
+    () => volunteerRows.filter((volunteer) => adminById.has(String(volunteer.assignedTeacherId))),
+    [adminById, volunteerRows]
   )
 
   const refreshVolunteers = async () => {
@@ -332,6 +356,26 @@ const { data: teachersData } = useQuery(
     }
   }
 
+  const handleAdminCheckIn = async (studentId) => {
+    try {
+      await backend.confirmVolunteerArrival(studentId)
+      await refreshVolunteers()
+    } catch (error) {
+      console.error('Failed to check in volunteer:', error)
+      alert(error?.message || 'Failed to check in volunteer.')
+    }
+  }
+
+  const handleAdminCheckOut = async (studentId) => {
+    try {
+      await backend.returnVolunteerFromTeacher(studentId)
+      await refreshVolunteers()
+    } catch (error) {
+      console.error('Failed to check out volunteer:', error)
+      alert(error?.message || 'Failed to check out volunteer.')
+    }
+  }
+
   const closeCustomModal = () => {
     setCustomModal(null)
     setCustomForm({ teacher: '', where: '' })
@@ -403,6 +447,46 @@ const { data: teachersData } = useQuery(
             <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-slate-400">Volunteer Management</p>
             <h4 className="text-lg font-medium text-slate-900">Available and current volunteers</h4>
             <p className="text-xs text-slate-500">Available volunteers can be assigned. Current volunteers are already on an active or pending assignment.</p>
+          </div>
+
+          <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
+            <div className="mb-3">
+              <div className="text-sm font-semibold text-slate-900">Admin volunteer check-in</div>
+              <div className="text-xs text-slate-500">Check in and check out students assigned to this admin.</div>
+            </div>
+
+            <div className="space-y-3">
+              {adminAssignedVolunteers.length ? adminAssignedVolunteers.map((volunteer) => (
+                <div key={`admin-assigned-${volunteer.id}`} className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm">
+                  <div>
+                    <p className="font-semibold text-slate-900">{volunteer.fullName}</p>
+                    <p className="text-xs text-slate-500">To: {volunteer.teacherName} • {volunteer.totalHours} hrs</p>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-500">Status:</span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{formatStatusLabel(volunteer.status)}</span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      disabled={!volunteer.isRequestingConfirmation}
+                      onClick={() => handleAdminCheckIn(volunteer.studentId)}
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${volunteer.isRequestingConfirmation ? 'bg-emerald-100 text-emerald-700 hover:bg-emerald-200' : 'cursor-not-allowed bg-slate-100 text-slate-400'}`}
+                    >
+                      <LogIn className="h-4 w-4" /> Check In
+                    </button>
+                    <button
+                      type="button"
+                      disabled={!volunteer.isCheckedIn}
+                      onClick={() => handleAdminCheckOut(volunteer.studentId)}
+                      className={`inline-flex items-center justify-center gap-1.5 rounded-xl px-4 py-2 text-sm font-semibold transition ${volunteer.isCheckedIn ? 'bg-rose-100 text-rose-700 hover:bg-rose-200' : 'cursor-not-allowed bg-slate-100 text-slate-400'}`}
+                    >
+                      <LogOut className="h-4 w-4" /> Check Out
+                    </button>
+                  </div>
+                </div>
+              )) : <div className="rounded-xl border border-dashed border-slate-200 px-4 py-6 text-center text-sm text-slate-400">No volunteers are currently assigned to this admin.</div>}
+            </div>
           </div>
 
           <div className="rounded-[24px] border border-slate-200 bg-slate-50/80 p-3">
